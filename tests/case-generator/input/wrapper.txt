@@ -1,0 +1,4 @@
+// generated wrapper begin
+{{.}}
+// literal template syntax stays literal: {{ name }}
+// generated wrapper end
