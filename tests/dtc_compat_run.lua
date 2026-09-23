@@ -58,6 +58,12 @@ testcase("version", function()
     local version = xdtc.version()
     check(type(version) == "string" and #version > 0, "version should be non-empty")
     check(version:match("^%d+%.%d+%.%d+$") ~= nil, "version should use x.y.z")
+    local readme = io.readfile(path.join(projectdir, "README.md"))
+    check(readme:find("# xdtc v" .. version .. "\n", 1, true) == 1,
+          "README title should match xdtc.version()")
+    local usage = io.readfile(path.join(projectdir, "docs/USAGE.md"))
+    check(usage:find("print(xdtc.version()) -- " .. version, 1, true) ~= nil,
+          "USAGE version example should match xdtc.version()")
 end)
 
 testcase("data-script DSL is scoped and include is relative", function()

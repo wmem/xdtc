@@ -156,6 +156,12 @@ target("app")
 - `input_template` 可选；存在时用 `{{.}}` 包装最终聚合内容，不存在则直接输出。
 - 默认项目配置是 `<project>/xdtc.lua`，但公共 API 不依赖这个约定。
 
+## 版本管理
+
+项目版本以 [`modules/xdtc.lua`](modules/xdtc.lua) 中的 `VERSION` 为准；`xdtc.version()` 返回不带 `v` 前缀的 `主版本.次版本.修订号`，Git 发布标签使用 `v` 前缀，例如 `v0.5.0`。仓库的 `xmake.lua` 不设置版本，以免覆盖宿主项目的版本信息。
+
+发布新版本时，修改 `VERSION`，同步本页标题和 [USAGE 中的版本示例](docs/USAGE.md#xdtcversion)，运行下方的完整回归测试；提交后，在该提交上创建同号 Git 标签。版本测试会检查 API 返回值与两处文档展示一致。
+
 ## 测试
 
 ```sh
