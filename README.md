@@ -1,5 +1,26 @@
 # xdtc v0.5.0
 
+## Xmake Addon 命令
+
+本仓库提供 Addon `xdtc`，安装后可以在消费工程中直接运行 `xmake xdtc`，无需复制工具源码或在工程中 `includes()`。默认读取工程根目录 `xdtc.lua`，`--config=<路径>` 可选择其他配置；相对路径按工程根目录定位，其他目录执行时使用 `-P <工程目录>`。
+
+分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。以下说明只涉及新插件命令，公开规则和模块的 Addon 接入尚未迁移。
+
+```sh
+xmake xdtc
+xmake xdtc --config=xdtc.lua
+xmake xdtc -P /path/to/project --help
+```
+
+本地开发需先准备完整插件目录，再交给 Xmake 安装。直接从源码 Git URL 或原始目录安装只会复制 Addon 内容，不执行分发配方，因此不会自动准备运行资源。
+
+```sh
+xmake lua scripts/prepare-addon.lua /tmp/xdtc-addon-stage
+xmake addon --install /tmp/xdtc-addon-stage
+```
+
+准备脚本拒绝覆盖已有输出目录。验证统一由索引仓库的 [插件集成测试](../xmake-addons-repo/tests/test_addons.py)覆盖，原有工具测试仍可独立执行。
+
 `xdtc` 是一个运行在 **Xmake 内置 Lua** 上的数据树、模板和代码生成工具。开发方式延续 DTC：多个 Lua 数据文件构建唯一 `root`，数据节点通过 `enable + match` 选择模板，最终聚合输出文件。
 
 不需要系统 Lua、LuaJIT、LuaRocks、Node.js、OpenResty 或 nginx。
