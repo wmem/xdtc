@@ -4,7 +4,22 @@
 
 本仓库提供 Addon `xdtc`，安装后可以在消费工程中直接运行 `xmake xdtc`，无需复制工具源码或在工程中 `includes()`。默认读取工程根目录 `xdtc.lua`，`--config=<路径>` 可选择其他配置；相对路径按工程根目录定位，其他目录执行时使用 `-P <工程目录>`。
 
-分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。以下说明只涉及新插件命令，公开规则和模块的 Addon 接入尚未迁移。
+分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。Addon `0.1.1` 同时提供命名空间代码生成规则与核心 API：
+
+```lua
+add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
+add_addons("xdtc 0.1.x")
+target("app")
+    set_kind("binary")
+    add_rules("@addon/xdtc/codegen", {config = "xdtc.lua"})
+    add_files("src/*.c")
+    add_files("build/generated.c", {always_added = true})
+```
+
+规则每次构建检查数据和模板，仅在输出内容变化时写入；缺失输出会重新生成，
+生成错误会阻止编译。规则的 `config` 默认 `xdtc.lua`，相对路径以工程根目录为基准。
+自定义构建回调也可以 `import("@addon.xdtc.generator")` 使用已有 `run_file()`、
+`run()` 等 API，核心实现只维护在 `modules/`。
 
 ```sh
 xmake xdtc
@@ -25,7 +40,7 @@ xmake addon --install /tmp/xdtc-addon-stage
 
 不需要系统 Lua、LuaJIT、LuaRocks、Node.js、OpenResty 或 nginx。
 
-## 30 秒开始
+## 源码方式接入
 
 推荐直接把仓库 clone 到宿主工程的 `tools/xdtc`：
 
