@@ -1,5 +1,5 @@
 local projectdir = path.absolute(path.join(os.scriptdir(), ".."))
-local xdtc = import("xdtc", {rootdir = path.join(projectdir, "modules"), anonymous = true})
+local xdtc = import("xdtc", { rootdir = path.join(projectdir, "modules"), anonymous = true })
 local raw_pcall = debug.global("pcall")
 
 local passed = 0
@@ -13,7 +13,12 @@ end
 
 local function equal(actual, expected, message)
     if actual ~= expected then
-        raise("test assertion failed: %s\nexpected: %s\nactual:   %s", message, tostring(expected), tostring(actual))
+        raise(
+            "test assertion failed: %s\nexpected: %s\nactual:   %s",
+            message,
+            tostring(expected),
+            tostring(actual)
+        )
     end
 end
 
@@ -34,14 +39,14 @@ local outdir = path.join(casedir, "out")
 os.rm(outdir)
 
 testcase("load_config returns declarative config", function()
-    local config, filepath = xdtc.load_config("xdtc.lua", {base_dir = casedir})
+    local config, filepath = xdtc.load_config("xdtc.lua", { base_dir = casedir })
     equal(config.data, "data/root.lua", "config data")
     equal(config.tpl[1].out, "out/generated.txt", "config output")
     check(path.is_absolute(filepath), "resolved config path should be absolute")
 end)
 
-testcase("run_file uses supplied base_dir", function()
-    local result = xdtc.run_file("xdtc.lua", {base_dir = casedir})
+testcase("run_file resolves entry using supplied base_dir", function()
+    local result = xdtc.run_file("xdtc.lua", { base_dir = casedir })
     equal(result.outputs[1].content, "uart0:32", "rendered content")
     equal(io.readfile(path.join(outdir, "generated.txt")), "uart0:32", "written output")
 end)
@@ -54,11 +59,11 @@ testcase("run_file supports top-level overrides", function()
             write = true,
             tpl = {
                 {
-                    files = {"tpl/*.tpl"},
-                    out = "out/override.txt"
-                }
-            }
-        }
+                    files = { "tpl/*.tpl" },
+                    out = "out/override.txt",
+                },
+            },
+        },
     })
     equal(result.outputs[1].content, "uart0:32", "override content")
     equal(io.readfile(path.join(outdir, "override.txt")), "uart0:32", "override output")

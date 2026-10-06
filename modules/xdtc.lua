@@ -12,7 +12,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.5.0"
+local VERSION = "0.6.0"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -45,7 +45,7 @@ local function _new_state()
         root = {},
         loaded_files = {},
         loading_stack = {},
-        file_stack = {}
+        file_stack = {},
     }
 end
 
@@ -152,7 +152,7 @@ _load_module = function(filepath, state)
         table.remove(state.loading_stack)
     end
 
-    local script, load_errors = _raw_loadfile(filepath)
+    local script, load_errors = _raw_loadfile(filepath, "bt", { nocache = true })
     if not script then
         _leave()
         raise("xdtc: failed to load data file %s: %s", filepath, load_errors)
@@ -220,7 +220,6 @@ function load_config(config_path, opt)
     end
 
     local env = _copy_table(sandbox.builtin_modules())
-    env.import = nil
     env.debug = nil
     env.pairs = _raw_pairs
     env.ipairs = _raw_ipairs
@@ -233,7 +232,7 @@ function load_config(config_path, opt)
     end
     env.os = env_os
 
-    local script, load_errors = _raw_loadfile(filepath)
+    local script, load_errors = _raw_loadfile(filepath, "bt", { nocache = true })
     if not script then
         raise("xdtc: failed to load config file %s: %s", filepath, load_errors)
     end
@@ -247,17 +246,19 @@ function load_config(config_path, opt)
         raise("xdtc: config file must return an object: %s", filepath)
     end
 
+    -- 查找入口的目录与配置内部路径的目录分开；内部默认相对配置文件。
+    config.base_dir =
+        _normalize_file(config.base_dir or path.directory(filepath), path.directory(filepath))
     return config, filepath
 end
 
 -- Run xdtc from a standalone configuration file.
--- opt.base_dir controls both relative config lookup and the default base_dir
--- used by the returned config. opt.overrides can shallowly replace top-level
--- config keys without changing the file itself.
+-- opt.base_dir 只控制配置入口查找；内部路径默认相对配置文件。
+-- opt.overrides 可浅层覆盖配置，不修改原文件。
 function run_file(config_path, opt)
     opt = opt or {}
     local loaded, filepath = load_config(config_path or "xdtc.lua", {
-        base_dir = opt.base_dir
+        base_dir = opt.base_dir,
     })
 
     local config = _copy_table(loaded)
@@ -270,11 +271,40 @@ function run_file(config_path, opt)
         end
     end
 
-    if config.base_dir == nil then
-        config.base_dir = opt.base_dir or path.directory(filepath)
-    end
+    config.base_dir = _normalize_file(config.base_dir, path.directory(filepath))
 
     return run(config)
+end
+
+-- 展开任务配置的数据入口，不添加模板元数据，也不执行生成任务。
+function load_data(config)
+    if type(config) ~= "table" or type(config.data) ~= "string" or config.data == "" then
+        raise("xdtc: config.data must be a non-empty string")
+    end
+    return load(_normalize_file(config.data, config.base_dir), { metadata = false })
+end
+
+-- 执行脚本只接收完整数据；路径由调用入口解析。
+function execute(script_path, data, args, opt)
+    opt = opt or {}
+    local filepath = _normalize_file(script_path, opt.base_dir)
+    if not os.isfile(filepath) then
+        raise("xdtc: script file not found: %s", filepath)
+    end
+    -- import 的模块缓存之外还有秒级文件缓存；先刷新编译结果。
+    local chunk, errors = _raw_loadfile(filepath, "bt", { nocache = true })
+    if not chunk then
+        raise("xdtc: failed to load script %s: %s", filepath, errors)
+    end
+    local script = import(path.basename(filepath), {
+        rootdir = path.directory(filepath),
+        anonymous = true,
+        nocache = true,
+    })
+    if type(script.main) ~= "function" then
+        raise("xdtc: script must define main(config): %s", filepath)
+    end
+    return script.main(data, table.unpack(args or {}))
 end
 
 function build(entry_path, opt)
@@ -329,7 +359,7 @@ function run(config)
         metadata = config.metadata ~= false,
         on_before_metadata = function(snapshot)
             raw_root = snapshot
-        end
+        end,
     })
 
     if debug_data_out then
@@ -341,7 +371,7 @@ function run(config)
         metadata = false,
         escape = config.escape,
         cache = config.cache,
-        write = config.write
+        write = config.write,
     })
 
     local debug_match = debug_output.array({})
@@ -349,7 +379,7 @@ function run(config)
         for _, entry in ipairs(output.debug or {}) do
             debug_match[#debug_match + 1] = {
                 templatePath = entry.templatePath or entry.template,
-                matchedObjects = entry.matchedObjects or {}
+                matchedObjects = entry.matchedObjects or {},
             }
         end
     end
@@ -361,7 +391,6 @@ function run(config)
         root = root,
         outputs = outputs,
         debug_data = raw_root,
-        debug_match = debug_match
+        debug_match = debug_match,
     }
 end
-

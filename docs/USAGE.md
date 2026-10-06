@@ -36,7 +36,7 @@ target("app")
 根 `xmake.lua` 会自动注册：
 
 ```text
-xmake xdtc          手动生成
+xmake xdtc gen      手动生成
 xdtc.codegen rule   target 构建前自动生成
 ```
 
@@ -57,7 +57,7 @@ return {
 手动运行：
 
 ```sh
-xmake xdtc
+xmake xdtc gen
 ```
 
 正常构建：
@@ -122,13 +122,13 @@ includes("tools/xdtc/xmake.lua")
 默认读取项目根目录的 `xdtc.lua`：
 
 ```sh
-xmake xdtc
+xmake xdtc gen
 ```
 
 使用其他配置文件：
 
 ```sh
-xmake xdtc --config=configs/fpga.lua
+xmake xdtc --config=configs/fpga.lua gen
 ```
 
 ### 编译前自动生成
@@ -259,7 +259,7 @@ task("my_codegen")
 
 | 我要做什么 | 用法 |
 |---|---|
-| 默认 `xdtc.lua` 手动生成 | `xmake xdtc` |
+| 默认 `xdtc.lua` 手动生成 | `xmake xdtc gen` |
 | 编译前自动生成 | `add_rules("xdtc.codegen")` |
 | 使用其他配置文件 | `--config=...` / rule 的 `config = ...` |
 | 不使用默认 task/rule 集成 | `xdtc.run(...)` / `xdtc.run_file(...)` |
@@ -873,12 +873,12 @@ endmodule
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.5.0
+print(xdtc.version()) -- 0.6.0
 ```
 
 ### `xdtc.load_config(config_path, opt)`
 
-加载一个独立的生成配置文件，但不执行生成。配置文件必须 `return` 一个 table：
+加载一个独立的任务配置文件，但不执行生成。配置文件必须 `return` 一个 table：
 
 ```lua
 local config, filepath = xdtc.load_config("xdtc.lua", {
@@ -886,7 +886,7 @@ local config, filepath = xdtc.load_config("xdtc.lua", {
 })
 ```
 
-配置文件运行在 Xmake Lua sandbox 中，可使用常见 Xmake Lua 基础 API；`os.scriptdir()` 指向该配置文件所在目录。
+配置文件运行在 Xmake Lua sandbox 中，可使用 import 和常见 Xmake Lua 基础 API；`os.scriptdir()` 指向该配置文件所在目录。
 
 ### `xdtc.run_file(config_path, opt)`
 
@@ -909,7 +909,7 @@ xdtc.run_file("xdtc.lua", {
 })
 ```
 
-`base_dir` 同时作为相对 `config_path` 的查找基准，并在配置本身未指定 `base_dir` 时作为生成路径基准。
+调用选项的 `base_dir` 只控制相对 `config_path` 的查找。配置内部路径默认相对于配置文件所在目录；配置中的 `base_dir` 可以显式覆盖，若它是相对路径，也相对于配置文件。绝对路径直接使用。
 
 ### `xdtc.load(entry_path, opt)`
 
@@ -1190,3 +1190,15 @@ examples/generator/   数据匹配 + 模板 + 代码生成
 ```
 
 第一次接入建议直接从 `examples/generator/` 复制修改。
+
+## 命令、动作与路径基准
+
+`xmake xdtc [--config=路径] <gen|data|run|动作> [位置参数]` 的完整约定和例子见
+[README 的命令与工程动作](../README.md#命令与工程动作)。没有子命令会报错，不隐式生成。
+配置查找默认相对启动目录；显式 -P 时相对所选工程。配置内部默认相对配置文件，
+绝对路径不变；数据文件 include 仍相对当前数据文件。
+
+`xdtc.load_data(config)` 读取 load_config 返回的任务配置，只展开 data，不添加 metadata。
+`xdtc.execute(script_path, data, args, {base_dir=...})` 调用脚本的 main(data, ...)；
+args 是位置参数数组，脚本错误原样传播。入口和数据每次重新读取，不受 Xmake 秒级文件缓存影响。
+配置文件可通过 public API 转发另一份任务配置；load_config 返回的 base_dir 已规范化为绝对路径。

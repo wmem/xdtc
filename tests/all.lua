@@ -5,12 +5,13 @@ local suites = {
     "generator_run.lua",
     "dtc_compat_run.lua",
     "config_run.lua",
-    "integration_run.lua"
+    "integration_run.lua",
+    "command_run.lua",
 }
 
 for _, suite in ipairs(suites) do
-    os.execv(os.programfile(), {"lua", path.join(projectdir, "tests", suite), "--root"}, {
-        envs = {XMAKE_ROOT = os.getenv("XMAKE_ROOT") or "y"}
+    os.execv(os.programfile(), { "lua", path.join(projectdir, "tests", suite), "--root" }, {
+        envs = { XMAKE_ROOT = os.getenv("XMAKE_ROOT") or "y" },
     })
 end
 

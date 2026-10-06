@@ -612,6 +612,7 @@ XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/integration_run
 tests/run.lua            data loader / DSL / merge / metadata
 tests/template_run.lua   template parser/compiler/runtime
 tests/generator_run.lua  discovery / matching / context / aggregation / input_template
+tests/command_run.lua    子命令、动作、路径和快速重写回归
 tests/config_run.lua     standalone xdtc.lua / load_config / run_file
 tests/integration_run.lua Xmake integration bridge / run-once / optional
 ```
@@ -631,7 +632,7 @@ examples/integration/
 
 ```sh
 cd examples/integration
-XMAKE_ROOT=y /path/to/xmake xdtc -P .
+XMAKE_ROOT=y /path/to/xmake xdtc -P . gen
 rm -rf build
 XMAKE_ROOT=y /path/to/xmake -P .
 ./build/linux/x86_64/release/demo

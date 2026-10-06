@@ -9,8 +9,10 @@ function main()
         "插件尚未准备：请通过索引仓库安装，或先执行 scripts/prepare-addon.lua"
     )
     module.add_directories(modules)
-    import("xdtc.integration", { rootdir = modules }).run(option.get("config"), {
-        base_dir = os.projectdir(),
-        once = false,
-    })
+    import("xdtc.command", { rootdir = modules }).run(
+        option.get("config"),
+        option.get("command"),
+        option.get("arguments"),
+        { base_dir = option.get("project") and os.projectdir() or os.workingdir() }
+    )
 end
