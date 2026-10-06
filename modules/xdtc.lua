@@ -14,7 +14,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.8.0"
+local VERSION = "0.8.1"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -302,6 +302,15 @@ function select_action(config, name, root)
         raise("xdtc: unknown action: %s", tostring(name))
     end
     return action.select(root, selected, name)
+end
+
+-- 立即读取 action 的输入与数据目录，不执行 action 脚本。
+function read_action_config(config_path, name, opt)
+    local description = load_config(config_path, opt)
+    local root = load_data(description)
+    local data = select_action(description, name, root)
+    local directory = path.directory(_normalize_file(description.data, description.base_dir))
+    return data, directory
 end
 
 -- 执行脚本接收调用方提供的数据；路径由调用入口解析。

@@ -8,5 +8,11 @@ function xdtc_config(file)
                 return generator.read_config(config_file, selector)
             end
         end,
+        select_action = function(self, name)
+            return function()
+                local generator = import("@addon.xdtc.generator")
+                return generator.read_action_config(config_file, name)
+            end
+        end,
     }
 end

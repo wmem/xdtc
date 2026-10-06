@@ -81,6 +81,52 @@ test("读取不执行模板或 action", function()
     assert(xdtc.read_config(entry, "mcu").chip == "gd32f427ve")
     assert(not os.isfile(path.join(path.directory(entry), "out.c")))
 end)
+
+local actions = [[return {
+    data = "../data/board.lua",
+    tpl = {{files = {"missing.tpl"}, out = "out.c"}},
+    actions = {
+        root = {script = "missing.lua", select = "."},
+        toolconfig = {script = "missing.lua", select = function(root)
+            return {chip = root.mcu.chip, debug = root.tools.debug}
+        end},
+        debug = {script = "missing.lua", select = "tools.debug"},
+        bad = {script = "missing.lua", select = "mcu.chip"},
+        invalid = {},
+    },
+}]]
+io.writefile(entry, actions)
+test("action 读取复用组装函数并返回真实数据目录", function()
+    local selected, base = xdtc.read_action_config("entry/xdtc.lua", "toolconfig", {
+        base_dir = directory,
+    })
+    assert(selected.chip == "gd32f427ve" and selected.debug.frequency == 100000)
+    assert(base == path.directory(data))
+    assert(not os.isfile(path.join(path.directory(entry), "out.c")))
+end)
+test("action 支持根对象与子对象选择", function()
+    assert(xdtc.read_action_config(entry, "root").mcu.chip == "gd32f427ve")
+    assert(xdtc.read_action_config(entry, "debug").frequency == 100000)
+end)
+test("action 结果独立且每次调用重新读取", function()
+    local selected = xdtc.read_action_config(entry, "toolconfig")
+    selected.debug.frequency = 1
+    assert(xdtc.read_action_config(entry, "toolconfig").debug.frequency == 100000)
+    io.writefile(data, "return {mcu={chip=\"updated\"},tools={debug={frequency=200000}}}")
+    assert(xdtc.read_action_config(entry, "toolconfig").chip == "updated")
+    io.writefile(data, original)
+end)
+test("action 名称、声明或结果错误明确失败", function()
+    for _, name in ipairs({ "missing", "invalid", "bad" }) do
+        assert(not raw_pcall(function()
+            xdtc.read_action_config(entry, name)
+        end))
+    end
+    io.writefile(entry, "return {data=\"../data/board.lua\"}")
+    assert(not raw_pcall(function()
+        xdtc.read_action_config(entry, "toolconfig")
+    end))
+end)
 os.rm(directory)
 print("xdtc.selection tests: %d passed, %d failed", passed, failed)
 assert(failed == 0, "配置读取测试失败")

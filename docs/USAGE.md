@@ -1,6 +1,6 @@
 # xdtc 使用文档
 
-推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.8.0 对应 Addon 0.2.1。
+推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.8.1 对应 Addon 0.2.2。
 
 ## 最小完整示例
 
@@ -21,7 +21,7 @@ project/
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.2.1")
+add_addons("xdtc 0.2.2")
 
 target("app")
     set_kind("binary")
@@ -823,6 +823,34 @@ add_rules("my.tools", {
 
 缺失路径、非法路径、缺少 selector、标量结果、函数返回 nil 或抛出异常，均在调用读取函数时明确报错，不回退到 root。空 table 有效。函数输入与选择结果独立复制，不将使用方修改写回原始数据。读取不执行 action，不渲染模板，不增加模板 metadata。
 
+### `board:select_action(name)` 返回 action 输入的读取函数
+
+Addon 0.2.2 新增此方法，用于复用 `xdtc.lua` 中已有 action 的 `select`，避免构建规则另写一份筛选或包装脚本。它返回零参数读取函数，**不返回 table，也不执行 action 脚本**：
+
+```lua
+add_rules("my.tools", {
+    config = board:select_action("toolconfig"),
+})
+```
+
+对应的 `xdtc.lua` 片段：
+
+```lua
+return {
+    data = "board.lua",
+    actions = {
+        toolconfig = {
+            script = "scripts/toolconfig.lua",
+            select = function(root)
+                return {mcu = root.mcu, debug = root.debug, serial = root.serial}
+            end,
+        },
+    },
+}
+```
+
+调用读取函数时才展开数据并应用该 action 的选择器，返回独立 table 和实际数据文件目录；支持 `"."`、子对象路径和函数组装，与命令执行共用选择规则。每次调用重新读取。未知 action、声明不合法或选择结果不是 table 时明确失败；没有默认 root 回退。读取不会检查脚本文件是否存在或调用它，也不会执行代码生成。action 声明仍需遵循 `{script, select}` 契约。
+
 ### 使用方必须调用读取函数
 
 `add_rules()` 的附加参数只保存声明，不会自动执行函数，也不会自动将它转换为配置对象。下面是接受 table 或读取函数的完整规则示例：
@@ -854,7 +882,7 @@ rule_end()
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.8.0
+print(xdtc.version()) -- 0.8.1
 ```
 
 ### `xdtc.load_config(config_path, opt)`
@@ -910,6 +938,18 @@ local mcu, directory = xdtc.read_config("xdtc.lua", "mcu", {
 ```
 
 配置域的 `board:select()` 返回回调，该回调调用这里的立即读取接口。
+
+### `xdtc.read_action_config(config_path, name, opt)`
+
+脚本域的立即读取接口，加载任务配置和数据，复用 `actions[name].select`，返回选中的 table 和实际数据文件目录。`opt.base_dir` 只用于定位任务配置入口。它不执行 action 脚本或生成，也不返回读取函数：
+
+```lua
+local tools, directory = xdtc.read_action_config("xdtc.lua", "toolconfig", {
+    base_dir = os.projectdir(),
+})
+```
+
+配置域的 `board:select_action()` 返回回调，该回调调用此接口。与 `select_action(description, name, root)` 的区别是，此接口负责加载配置和展开数据；后者仅筛选调用方已经提供的 root。
 
 ### `xdtc.run_file(config_path, opt)`
 
@@ -1291,7 +1331,7 @@ end
 | CLI 的 --config；未指定时的 xdtc.lua | 启动目录；显式 -P 时是所选工程目录 |
 | Addon／源码代码生成规则的 config 参数 | 工程根目录 |
 | xdtc_config(file) 的 file 参数 | 声明处的 xmake.lua 所在目录 |
-| load_config/run_file/read_config 的配置入口 | opt.base_dir；未指定时是当前工作目录 |
+| load_config/run_file/read_config/read_action_config 的配置入口 | opt.base_dir；未指定时是当前工作目录 |
 | 任务配置内的 data、模板、输出、run／action 脚本 | 该任务配置文件的目录，或它显式声明的 base_dir |
 | 数据 DSL 的 include | 当前执行的数据文件目录 |
 

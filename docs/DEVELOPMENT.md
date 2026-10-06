@@ -27,7 +27,7 @@ addon/                         # Addon 对外入口
 scripts/prepare-addon.lua       # 配方与本地准备共用的资源安装过程
 xmake.lua                      # 源码接入：task("xdtc") + rule("xdtc.codegen")
 modules/
-├── xdtc.lua                 # 公共入口、加载、生成、read_config/select_action/execute
+├── xdtc.lua                 # 公共入口、加载、生成、read_config/read_action_config/select_action/execute
 └── xdtc/
     ├── command.lua           # 保留命令与工程 action 分发
     ├── action.lua            # action 声明校验，复用对象选择
@@ -134,7 +134,7 @@ xdtc.run(config)
 
 Addon 的代码生成规则直接调用 run_file，在 on_prepare 中每次生成内存结果，再比较内容决定是否写文件；不使用源码规则的 run-once／optional 桥接。CLI 默认相对启动目录定位入口，规则以工程根目录定位；配置内部路径统一由 load_config 规范化。详细路径约定见 [使用文档](USAGE.md#命令动作与路径基准)。
 
-配置域辅助接口 xdtc_config(file) 在声明时固定入口路径；select(selector) 只创建读取函数。调用方需要把配置域回调绑定到脚本环境，并显式调用，函数才通过 read_config 加载和选择数据，返回 table 和实际数据目录。工具不接管调用方的规则生命周期，不自动执行 add_rules 中的函数。
+配置域辅助接口 xdtc_config(file) 在声明时固定入口路径；select(selector) 和 select_action(name) 只创建读取函数。调用方需要把配置域回调绑定到脚本环境，并显式调用，函数才通过 read_config 或 read_action_config 加载和选择数据，返回 table 和实际数据目录。工具不接管调用方的规则生命周期，不自动执行 add_rules 中的函数。
 
 ### 根 `xmake.lua` 集成入口
 
@@ -562,6 +562,7 @@ xdtc.version
 xdtc.load_config
 xdtc.load_data
 xdtc.read_config
+xdtc.read_action_config
 xdtc.select_action
 xdtc.execute
 xdtc.run_file
@@ -643,7 +644,7 @@ tests/config_run.lua     standalone xdtc.lua / load_config / run_file
 tests/integration_run.lua Xmake integration bridge / run-once / optional
 ```
 
-新功能应放到对应层测试；跨层行为再补 generator 端到端测试。2026-10-06 在上述本机环境运行八个源码套件，58 项检查通过。真实 Addon 安装、命名空间导入和配置域引用由 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)验证，源码测试不替代插件分发验证。
+新功能应放到对应层测试；跨层行为再补 generator 端到端测试。2026-10-06 在上述本机环境运行八个源码套件，62 项检查通过。真实 Addon 安装、命名空间导入和配置域引用由 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)验证，源码测试不替代插件分发验证。
 
 ### 本地准备插件
 
@@ -745,6 +746,6 @@ third_party/lua-resty-template-LICENSE
 
 ## 配置引用的调用边界
 
-addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。
+addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。select_action(name) 的回调调用 read_action_config，在相同加载流程之后复用 actions[name].select，不执行 action 脚本；因此工程不需要另外提供包装读取模块。
 
-board:select 的组装函数接收独立 root，返回 table；board:select 自身返回读取函数。这两个函数的职责和返回类型不同。read_config／select_action 立即返回 table，也不等价于配置引用。错误路径、标量或 nil 结果必须失败，不自动回退 root。对应测试为 tests/selection_run.lua；辅助接口的实际消费由索引集成测试覆盖。
+board:select 的组装函数接收独立 root，返回 table；board:select 自身返回读取函数。这两个函数的职责和返回类型不同。read_config／read_action_config／select_action 立即返回 table，也不等价于配置引用。错误路径、标量或 nil 结果必须失败，不自动回退 root。对应测试为 tests/selection_run.lua；辅助接口的实际消费由索引集成测试覆盖。
