@@ -1,40 +1,101 @@
 # xdtc v0.8.0
 
-## Xmake Addon 命令
+xdtc 是运行在 **Xmake 内置 Lua** 上的数据树和代码生成工具。工程用 Lua 描述配置，用模板描述代码；xdtc 展开继承、覆盖和删除操作后，按配置生成文件，也可以把选出的数据交给构建规则或操作脚本。
 
-本仓库提供 Addon `xdtc`，安装后可以在消费工程中直接运行 `xmake xdtc gen`，无需复制工具源码或在工程中 `includes()`。默认读取启动目录的 `xdtc.lua`，`--config=<路径>` 可选择其他配置；显式 `-P <工程目录>` 时按该工程目录查找。选项必须位于子命令之前。
+推荐通过 Xmake Addon 使用。当前工具版本为 **v0.8.0**，对应 Addon **0.2.1**；两个版本分别管理。需要支持 `add_addons` 的 Xmake，本机验证版本为 `3.1.1+HEAD.3ba37a0`。xdtc 不需要系统 Lua、Node.js 或其他语言运行时。
 
-分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。Addon `0.2.0` 提供新的 gen/data/run/action 命令入口，并继续提供命名空间代码生成规则与核心 API：
+## 工程中的文件如何配合
+
+| 文件 | 职责 |
+| --- | --- |
+| `xmake.lua` | 声明插件、构建目标和规则；使用方决定怎样消费配置 |
+| `xdtc.lua` | 选择数据入口、模板输出任务和 action 的脚本及输入对象 |
+| `board.lua` | 工程配置数据；可 include 包内默认描述后覆盖差异 |
+| `templates/*.tpl` | 把数据转换为 C、头文件或其他文本 |
+| 操作脚本 | 定义 `main(config, ...)`，使用传入对象执行操作 |
+
+一个工程可以只维护一份 `board.lua`。`include/remove/replace/update` 用于复用与调整已有描述，不要求把应用配置拆成多个文件。所有数据最终形成一棵 root；xdtc 不规定其中的 MCU、串口或工具对象必须放在哪一级。
+
+## 最小接入
+
+在消费工程中创建以下四个文件。
+
+`xmake.lua`：
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.2.x")
-target("app")
-    set_kind("binary")
+add_addons("xdtc 0.2.1")
+
+target("generated")
+    set_kind("phony")
     add_rules("@addon/xdtc/codegen", {config = "xdtc.lua"})
-    add_files("src/*.c")
-    add_files("build/generated.c", {always_added = true})
+target_end()
 ```
 
-规则每次构建检查数据和模板，仅在输出内容变化时写入；缺失输出会重新生成，
-生成错误会阻止编译。规则的 `config` 默认 `xdtc.lua`，相对路径以工程根目录为基准。
-自定义构建回调也可以 `import("@addon.xdtc.generator")` 使用已有 `run_file()`、
-`run()` 等 API，核心实现只维护在 `modules/`。
+`xdtc.lua`：
+
+```lua
+return {
+    data = "board.lua",
+    tpl = {
+        {files = {"templates/mcu.c.tpl"}, out = "build/mcu.c"},
+    },
+}
+```
+
+`board.lua`：
+
+```lua
+return {
+    mcu = {
+        enable = true,
+        match = "mcu.c.tpl",
+        chip = "example-mcu",
+        clock_mhz = 200,
+    },
+}
+```
+
+`templates/mcu.c.tpl`：
+
+```c
+unsigned mcu_clock_mhz(void)
+{
+    return {{ clock_mhz }};
+}
+```
+
+在该工程目录运行：
 
 ```sh
-xmake xdtc gen
-xmake xdtc --config=xdtc.lua gen
-xmake xdtc -P /path/to/project --help
+xmake xdtc gen     # 按 xdtc.lua 生成 build/mcu.c
+xmake xdtc data    # 向 stdout 输出展开后的 return {...} Lua 数据
+xmake             # 构建 generated 目标，编译前执行生成规则
 ```
 
-## 在 Xmake 配置域中引用数据
+Addon 的命令和代码生成规则不需要复制源码或 `includes()`。规则每次构建读取数据和模板，仅在内容变化时写入输出；缺失输出会重新生成，错误会阻止构建。这个示例只生成文件；若要将生成的 C/C++ 编入目标，显式加入 `add_files("build/mcu.c", {always_added = true})`，详见 [Xmake 集成](docs/USAGE.md#xmake-集成)。
 
-Addon 0.2.1 新增配置引用接口。`board:select()` **返回读取函数，不返回 table**；使用方在规则的脚本环境中显式调用该函数，才展开数据并取得对象。
+## 命令与工程动作
+
+| 命令 | 输入和行为 |
+| --- | --- |
+| `xmake xdtc gen` | 按 `tpl` 生成文件 |
+| `xmake xdtc data` | 展开完整数据，输出可加载的 Lua 文本 |
+| `xmake xdtc run scripts/check.lua arg` | 把完整数据交给脚本的 `main(root, ...)` |
+| `xmake xdtc inspect arg` | 从 `actions.inspect` 选择脚本和输入对象后执行 |
+
+`gen/data/run` 是保留命令；其他名称由工程声明。没有子命令会报错，不隐式生成。选项放在子命令前，例如 `xmake xdtc --config=configs/xdtc.lua gen`。
+
+`data/run/action` 不增加模板 metadata，不写生成文件；脚本自己产生的副作用由脚本负责。action 用 `{script, select}` 声明，select 支持 root、子对象和函数组装。脚本只需维护输入字段约定，数据树改组时修改选择即可。完整用法和错误约定见 [命令、动作与路径基准](docs/USAGE.md#命令动作与路径基准)。
+
+## 给构建规则提供配置
+
+Addon 0.2.1 提供配置引用接口。下面是调用已定义的 `my.firmware` 规则的片段：
 
 ```lua
 includes("@addon/xdtc/config")
 if type(xdtc_config) ~= "function" then
-    return -- 首次安装插件后，Xmake 会重新读取工程。
+    return -- 首次安装声明的插件后，Xmake 会重新读取工程。
 end
 local board = xdtc_config("xdtc.lua")
 
@@ -43,259 +104,42 @@ add_rules("my.firmware", {
 })
 ```
 
-字符串选择已有对象，函数可以组装多个对象。使用方负责自己的输入字段约定，xdtc 不解释 MCU 或工具参数。返回值、路径、错误和使用方完整调用方式见 [配置引用接口](docs/USAGE.md#xmake-配置引用接口)。
+**`board:select()` 返回读取函数，不返回 table，也不会自动执行。** 使用方在脚本域绑定并显式调用函数，才取得选中的 table 和数据文件目录。字符串选择已有对象，函数组装对象；xdtc 不替规则解释字段。使用方完整代码见 [配置引用接口](docs/USAGE.md#xmake-配置引用接口)。
 
-## 命令与工程动作
-
-```sh
-xmake xdtc gen
-xmake xdtc data
-xmake xdtc run scripts/check.lua argument
-xmake xdtc flash
-xmake xdtc --config=configs/board.lua gen
-```
-
-`gen`、`data`、`run` 是保留命令，其他名称从配置的 `actions` 查找。
-`gen` 按 `tpl` 生成文件；`data` 只展开配置的 `data`，向 stdout 输出可加载的
-`return {...}` Lua 文本；`run` 把完整展开数据传入脚本的 `main(config, ...)`；action 按 select 筛选输入。
-后续位置参数原样传给脚本。没有子命令、未知动作、保留名称冲突、脚本缺少 main 或执行报错均失败退出。
-原来的隐式生成命令 `xmake xdtc --config=...` 已改为显式 `gen`，不保留旧 CLI 调用方式。
-自动构建规则与 `run_file()` 仍用于生成，无需改为启动 CLI 子进程。
+在 `on_load/on_run` 等脚本域需要立即读取时，可以直接使用公开 API：
 
 ```lua
-local components = path.absolute("../components", os.scriptdir())
-return {
-    data = "user_config/app_config.lua",
-    tpl = {{files = {"templates/*.tpl"}, out = "user_code/app_config.c"}},
-    actions = {
-        flash = {
-            script = path.join(components, "msp/tools/actions/flash.lua"),
-            select = "tools.flash",
-        },
-    },
-}
-```
-
-action 必须为 `{script, select}`，不再接受旧的脚本路径字符串；迁移完整 root 输入时显式写
-`select = "."`。其他字符串是从 root 开始的点分对象路径，例如 `"serial"`、`"tools.console"`。
-字符串选择与函数返回值必须是 table；空 table 可用，缺失路径、标量、nil 或筛选异常均报错，
-不会回退为 root。包含点号的字段名或数组下标可以通过 Lua 函数选择。
-
-```lua
-select = function(root)
-    return {debug = root.board.debug, flash = root.tools.flash}
-end
-```
-
-只有选择配置依赖数据树布局；脚本维护自己输入对象的字段契约。函数接收独立数据副本，
-筛选结果也独立复制，避免修改影响后续生成或其他动作。gen/data 不执行 select；run 保持完整
-root 的通用脚本入口。`xdtc.select_action(config, name, root)` 供应用读取器复用同一选择逻辑。
-
-配置内部的 `data`、模板、输出和脚本路径默认相对于该配置文件；绝对路径直接使用。
-显式 `base_dir` 可覆盖，若它是相对路径，也相对于配置文件。API 选项 `base_dir`
-只决定到哪里查找配置文件，不再改变配置内部的默认基准。
-数据文件的 `include()` 始终相对当前数据文件；普通数据字符串不自动转换为路径。
-公共目录用 local 变量和 `path.absolute/path.join` 定义一次。
-
-`data/run/action` 不添加模板 metadata，保留未启用节点和模板描述字段，不写生成文件。
-脚本按其自己的目录解析模块，操作的字段契约由脚本维护；xdtc 不内置 MCU 或烧录逻辑。
-配置文件允许使用 Xmake 的 import；数据 DSL 仍通过 include 加载数据。
-工程可用公开 API 转发配置入口：
-
-```lua
-local generator = import("@addon.xdtc.generator")
-return generator.load_config(path.join(os.scriptdir(), "project/template/xdtc.lua"))
-```
-
-本地开发需先准备完整插件目录，再交给 Xmake 安装。直接从源码 Git URL 或原始目录安装只会复制 Addon 内容，不执行分发配方，因此不会自动准备运行资源。
-
-```sh
-xmake lua scripts/prepare-addon.lua /tmp/xdtc-addon-stage
-xmake addon --install /tmp/xdtc-addon-stage
-```
-
-准备脚本拒绝覆盖已有输出目录。验证统一由索引仓库的 [插件集成测试](../xmake-addons-repo/tests/test_addons.py)覆盖，原有工具测试仍可独立执行。
-
-`xdtc` 是一个运行在 **Xmake 内置 Lua** 上的数据树、模板和代码生成工具。开发方式延续 DTC：多个 Lua 数据文件构建唯一 `root`，数据节点通过 `enable + match` 选择模板，最终聚合输出文件。
-
-不需要系统 Lua、LuaJIT、LuaRocks、Node.js、OpenResty 或 nginx。
-
-## 源码方式接入
-
-推荐直接把仓库 clone 到宿主工程的 `tools/xdtc`：
-
-```text
-project/
-├── xmake.lua
-├── xdtc.lua
-├── tools/
-│   └── xdtc/
-│       ├── xmake.lua
-│       ├── modules/
-│       └── docs/
-├── data/
-└── templates/
-```
-
-宿主 `xmake.lua` 只需要：
-
-```lua
-includes("tools/xdtc/xmake.lua")
-
-target("app")
-    set_kind("binary")
-    add_rules("xdtc.codegen")
-    add_files("src/*.c")
-```
-
-项目根目录的 `xdtc.lua`：
-
-```lua
-return {
-    data = "data/root.lua",
-    tpl = {
-        {
-            files = {"templates/*.tpl"},
-            out = "build/generated.sv"
-        }
-    }
-}
-```
-
-`tools/xdtc/xmake.lua` 自动注册：
-
-```text
-xmake xdtc gen      手动生成，默认读取 <project>/xdtc.lua
-xdtc.codegen        target 编译前自动生成，同样读取 <project>/xdtc.lua
-```
-
-因此可以：
-
-```sh
-xmake xdtc gen
-xmake
-```
-
-## 保持灵活
-
-`xdtc.lua` 是推荐约定，不是强制入口。仍然支持：
-
-```lua
-local xdtc = import("xdtc")
-
--- 直接传配置
-xdtc.run({...})
-
--- 任意配置文件
-xdtc.run_file("configs/fpga.lua", {
-    base_dir = os.projectdir()
+local xdtc = import("@addon.xdtc.generator")
+local mcu, directory = xdtc.read_config("xdtc.lua", "mcu", {
+    base_dir = os.projectdir(),
 })
 ```
 
-rule 也能覆盖默认配置：
+这里 `read_config()` 立即返回 table，与配置引用的读取函数不同。生成、选择和脚本执行 API 见 [公共 API](docs/USAGE.md#公共-api)。
 
-```lua
-add_rules("xdtc.codegen", {
-    config = "configs/fpga.lua",
-    once = true,
-    optional = false
-})
-```
+## 路径与数据约定
 
-手动 task：
+CLI 默认从启动目录找 `xdtc.lua`，显式 `-P` 时从所选工程目录查找。任务配置内的数据、模板、输出和 action 脚本路径默认相对该配置文件；数据 DSL 的 `include()` 相对当前数据文件。绝对路径直接使用，普通数据字符串不自动转换为路径。
 
-```sh
-xmake xdtc --config=configs/fpga.lua gen
-```
+生成时，节点只有 `enable = true` 且 `match` 命中模板才渲染。当前节点字段直接用于 `{{ field }}`，自动上下文包括 `name/parent/root/template/output`；数组中的对象不作为独立模板节点。精确规则见 [数据与模板匹配](docs/USAGE.md#数据与模板匹配)和 [模板上下文](docs/USAGE.md#模板上下文)。
 
-如果完全不想使用 `tools/xdtc/xmake.lua` 的 task/rule 集成，也可以只添加模块目录，在自己的 callback 中调用 `xdtc.run()` / `xdtc.run_file()`。
+## 阅读入口
 
-## 最小数据与模板
+| 需要了解什么 | 文档 |
+| --- | --- |
+| 安装插件、自动生成、把生成源码编入目标 | [USAGE：Xmake 集成](docs/USAGE.md#xmake-集成) |
+| gen/data/run/action、对象筛选和相对路径 | [USAGE：命令、动作与路径基准](docs/USAGE.md#命令动作与路径基准) |
+| 配置引用返回的函数如何被规则调用 | [USAGE：配置引用接口](docs/USAGE.md#xmake-配置引用接口) |
+| include、覆盖、删除和合并 | [USAGE：数据文件](docs/USAGE.md#数据文件)、[数据 DSL](docs/USAGE.md#数据-dsl) |
+| 模板语法和输出包装 | [USAGE：模板语法](docs/USAGE.md#模板语法)、[input_template](docs/USAGE.md#input_template-输出包装) |
+| 不使用 Addon，直接接入源码 | [USAGE：源码方式接入](docs/USAGE.md#源码方式接入) |
+| 内部职责、扩展和测试入口 | [DEVELOPMENT](docs/DEVELOPMENT.md) |
+| 原 DTC 行为对应关系 | [DTC 测试兼容矩阵](docs/DTC-TEST-COVERAGE.md) |
 
-`data/root.lua`：
+## 开发与验证
 
-```lua
-return {
-    uart0 = {
-        enable = true,
-        match = "module.sv.tpl",
-        width = 32
-    }
-}
-```
+工具源码版本以 [modules/xdtc.lua](modules/xdtc.lua) 的 `VERSION` 为准。发布代码版本时同步本页标题和 USAGE 的版本示例，在已验证提交上创建对应 Git 标签，如 `v0.8.0`。Addon 配方版本由 [插件索引仓库](https://github.com/wmem/xmake-addons/blob/master/README.md)独立维护，固定工具源码提交；更新文档不需要改变运行时版本。
 
-`templates/module.sv.tpl`：
+在工具仓库根目录执行 `xmake lua tests/all.lua`。回归覆盖数据、模板、生成、DTC 行为、任务配置、源码集成、命令和配置对象读取；套件入口与验证说明见 [开发文档](docs/DEVELOPMENT.md#开发与测试)。Addon 的真实安装与消费验证位于 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)，v0.8.0／Addon 0.2.1 的结果见 [配置引用验证](https://github.com/wmem/xmake-addons/blob/master/tests/validation-xdtc-config.json)。
 
-```text
-module {{ name }};
-    localparam int WIDTH = {{ width }};
-endmodule
-```
-
-`name` 自动生成；模板还会自动得到 `parent`、`root`、`template`、`output`。
-
-## 生成 C/C++ 源文件时
-
-如果生成的 `.c/.cpp` 在项目加载时还不存在，需要：
-
-```lua
-target("app")
-    add_rules("xdtc.codegen")
-    add_files("src/main.c")
-    add_files("build/generated.c", {always_added = true})
-```
-
-这是 Xmake 的 source 扫描时序要求。生成 header、Verilog、Tcl、DTS 等不直接进入 C/C++ source list 的文件不需要 `always_added`。
-
-## 快速导航
-
-| 需求 | 文档 |
-|---|---|
-| clone 到 `tools/xdtc` 后怎么接入 | [USAGE：Xmake 集成](docs/USAGE.md#xmake-集成) |
-| 自定义配置路径 / 不使用默认集成 | [USAGE：灵活入口](docs/USAGE.md#灵活入口) |
-| `include` / `return` / 数据合并 | [USAGE：数据文件](docs/USAGE.md#数据文件) |
-| `get/update/replace/remove` | [USAGE：数据 DSL](docs/USAGE.md#数据-dsl) |
-| `enable/match` | [USAGE：数据与模板匹配](docs/USAGE.md#数据与模板匹配) |
-| 模板上下文 | [USAGE：模板上下文](docs/USAGE.md#模板上下文) |
-| `input_template` / `{{.}}` | [USAGE：input_template](docs/USAGE.md#input_template-输出包装) |
-| 内部架构与扩展原则 | [DEVELOPMENT](docs/DEVELOPMENT.md) |
-| DTC 原测试迁移情况 | [DTC-TEST-COVERAGE](docs/DTC-TEST-COVERAGE.md) |
-
-## 核心约定
-
-- 所有数据最终合并为唯一 `root`。
-- 普通对象自动生成 `name`；数组对象不自动生成 metadata，也不参与模板匹配。
-- 节点只有 `enable = true` 且 `match` 命中模板文件名时才渲染。
-- 模板当前节点字段直接使用，如 `{{ name }}`，没有 `item` 前缀。
-- `parent/root/template/output` 自动注入。
-- generator 默认 `escape = false`。
-- `input_template` 可选；存在时用 `{{.}}` 包装最终聚合内容，不存在则直接输出。
-- 默认项目配置是 `<project>/xdtc.lua`，但公共 API 不依赖这个约定。
-
-## 版本管理
-
-项目版本以 [`modules/xdtc.lua`](modules/xdtc.lua) 中的 `VERSION` 为准；`xdtc.version()` 返回不带 `v` 前缀的 `主版本.次版本.修订号`，Git 发布标签使用 `v` 前缀，例如 `v0.7.0`。仓库的 `xmake.lua` 不设置版本，以免覆盖宿主项目的版本信息。
-
-发布新版本时，修改 `VERSION`，同步本页标题和 [USAGE 中的版本示例](docs/USAGE.md#xdtcversion)，运行下方的完整回归测试；提交后，在该提交上创建同号 Git 标签。版本测试会检查 API 返回值与两处文档展示一致。
-
-## 测试
-
-```sh
-XMAKE_ROOT=y /path/to/xmake lua tests/all.lua --root
-```
-
-当前回归：数据层 5、模板层 8、generator 6、DTC 兼容 11、config 3、integration 2，加上命令层 9，共 **44/44 PASS**。另外有真实宿主工程 smoke test 验证：
-
-```lua
-includes("tools/xdtc/xmake.lua")
-```
-
-能够从宿主工程根目录读取 `xdtc.lua`，并在同一次 Xmake 构建中生成并编译新的 C 源文件。
-
-## Attribution
-
-模板语法和部分 parser 设计来自 Aapo Talvensaari 的 `lua-resty-template`。BSD License 保留在：
-
-```text
-third_party/lua-resty-template-LICENSE
-```
+本地插件准备和示例运行方法见 [开发文档](docs/DEVELOPMENT.md#开发与测试)。模板实现的来源及许可证见 [lua-resty-template 许可证](third_party/lua-resty-template-LICENSE)和 [LICENSE](LICENSE)。

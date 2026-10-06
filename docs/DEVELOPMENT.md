@@ -19,11 +19,20 @@ xdtc 的核心约束：
 ## 源码结构
 
 ```text
-xmake.lua                       # 宿主工程 drop-in 入口：task("xdtc") + rule("xdtc.codegen")
+addon/                         # Addon 对外入口
+├── plugins/xdtc/               # gen/data/run/action 命令
+├── rules/codegen/xmake.lua     # @addon/xdtc/codegen
+├── includes/config/xmake.lua   # 配置引用：select 返回读取函数
+└── modules/generator.lua       # @addon.xdtc.generator，转发核心 API
+scripts/prepare-addon.lua       # 配方与本地准备共用的资源安装过程
+xmake.lua                      # 源码接入：task("xdtc") + rule("xdtc.codegen")
 modules/
-├── xdtc.lua                 # 公共入口、data/config loader、run/run_file/select_action
+├── xdtc.lua                 # 公共入口、加载、生成、read_config/select_action/execute
 └── xdtc/
-    ├── integration.lua       # task/rule 共用运行桥接与 run-once
+    ├── command.lua           # 保留命令与工程 action 分发
+    ├── action.lua            # action 声明校验，复用对象选择
+    ├── selection.lua         # 对象路径、函数组装和副本隔离
+    ├── integration.lua       # 源码规则的 run-once/optional 桥接
     ├── kind.lua              # Lua table 的 array/object 分类
     ├── merge.lua             # deep merge
     ├── pathops.lua           # get/remove/replace/update
@@ -37,7 +46,9 @@ modules/
 tests/
 ├── dtc_compat_run.lua        # 原 DTC 行为兼容回归
 ├── config_run.lua            # xdtc.lua / run_file 回归
-├── integration_run.lua       # integration bridge 回归
+├── integration_run.lua       # 源码 integration bridge 回归
+├── command_run.lua           # 命令与 action 回归
+├── selection_run.lua         # 对象读取与目录回归
 └── dtc_compat/               # 对应 case fixtures
 examples/
 third_party/
@@ -113,9 +124,17 @@ xdtc.run(config)
 
 - `config_path` 可以任意指定，不强制文件名；
 - `opt.base_dir` 用于解析相对 config path；
-- 若 config 没显式写 `base_dir`，`opt.base_dir` 成为生成路径基准；
+- 配置内部默认以配置文件所在目录为基准；显式相对 `config.base_dir` 也相对配置文件解析，`opt.base_dir` 不改变内部路径基准；
 - `opt.overrides` 只做 top-level shallow override，不改变原配置文件；
 - 直接 `xdtc.run(table)` 始终保留，配置文件不是核心层依赖。
+
+### Addon 接入
+
+推荐接入通过索引配方安装，运行资源由 scripts/prepare-addon.lua 准备到插件私有目录；核心源码只维护在 modules 中。addon/modules/generator.lua 注册私有模块目录并继承公共 API，命令和规则调用同一实现。
+
+Addon 的代码生成规则直接调用 run_file，在 on_prepare 中每次生成内存结果，再比较内容决定是否写文件；不使用源码规则的 run-once／optional 桥接。CLI 默认相对启动目录定位入口，规则以工程根目录定位；配置内部路径统一由 load_config 规范化。详细路径约定见 [使用文档](USAGE.md#命令动作与路径基准)。
+
+配置域辅助接口 xdtc_config(file) 在声明时固定入口路径；select(selector) 只创建读取函数。调用方需要把配置域回调绑定到脚本环境，并显式调用，函数才通过 read_config 加载和选择数据，返回 table 和实际数据目录。工具不接管调用方的规则生命周期，不自动执行 add_rules 中的函数。
 
 ### 根 `xmake.lua` 集成入口
 
@@ -541,6 +560,10 @@ debug 输出必须复用 generator 已产生的 trace，不要重新实现一套
 ```text
 xdtc.version
 xdtc.load_config
+xdtc.load_data
+xdtc.read_config
+xdtc.select_action
+xdtc.execute
 xdtc.run_file
 xdtc.load
 xdtc.build
@@ -559,7 +582,7 @@ xdtc.template.clear_cache
 
 `xdtc.generator` 的 helper 当前可 import，但优先视为较低层 API；修改时应先检查 examples/tests 是否已有外部依赖。
 
-`xdtc.integration` 是可 import 的底层集成桥接；默认使用者优先通过仓库根 `xmake.lua` 注册 task/rule，只有自定义构建流程才需要直接调用它。
+`xdtc.integration` 是源码接入的底层桥接；源码消费者通过仓库根 xmake.lua 注册 task/rule，自定义流程才直接调用它。Addon 消费者使用命名空间规则或 `@addon.xdtc.generator`，不需要依赖 integration 模块。配置引用接口的精确返回值与调用方式见 [使用文档](USAGE.md#xmake-配置引用接口)。
 
 ## 设计不变量
 
@@ -586,18 +609,20 @@ xdtc.template.clear_cache
 包根目录：
 
 ```sh
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/all.lua --root
+xmake lua tests/all.lua
 ```
 
 等价于：
 
 ```sh
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/run.lua
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/template_run.lua
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/generator_run.lua
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/dtc_compat_run.lua
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/config_run.lua
-XMAKE_ROOT=y /path/to/xmake-bundle-v3.1.1.linux.x86_64 lua tests/integration_run.lua
+xmake lua tests/run.lua
+xmake lua tests/template_run.lua
+xmake lua tests/generator_run.lua
+xmake lua tests/dtc_compat_run.lua
+xmake lua tests/config_run.lua
+xmake lua tests/integration_run.lua
+xmake lua tests/command_run.lua
+xmake lua tests/selection_run.lua
 ```
 
 ### DTC 兼容回归
@@ -618,7 +643,18 @@ tests/config_run.lua     standalone xdtc.lua / load_config / run_file
 tests/integration_run.lua Xmake integration bridge / run-once / optional
 ```
 
-新功能应放到对应层测试；跨层行为再补 generator 端到端测试。
+新功能应放到对应层测试；跨层行为再补 generator 端到端测试。2026-10-06 在上述本机环境运行八个源码套件，58 项检查通过。真实 Addon 安装、命名空间导入和配置域引用由 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)验证，源码测试不替代插件分发验证。
+
+### 本地准备插件
+
+索引配方和本地开发共用准备脚本。在仓库根目录执行：
+
+```sh
+xmake lua scripts/prepare-addon.lua /tmp/xdtc-addon-stage
+xmake addon --install /tmp/xdtc-addon-stage
+```
+
+输出目录必须尚不存在。直接从原始源码目录或 Git URL 安装，不会执行索引配方的准备过程，因而不能假定私有运行资源已经齐全；本地阶段用于开发验证，版本化消费通过索引配方安装。
 
 ### 示例 smoke test
 
@@ -629,13 +665,14 @@ examples/generator/
 examples/integration/
 ```
 
-`examples/integration/` 额外验证推荐的 Xmake 接入：默认 `xdtc.lua`、手动 task、`on_prepare` rule，以及“生成的 C 源文件在本次构建中参与编译”。在本仓库内运行嵌套 example 时可使用：
+`examples/integration/` 额外验证源码方式的 Xmake 接入：默认 `xdtc.lua`、手动 task、`on_prepare` rule，以及“生成的 C 源文件在本次构建中参与编译”。在本仓库内运行嵌套 example 时可使用：
 
 ```sh
+# 从仓库根目录进入示例，显式选择它自己的配置文件。
 cd examples/integration
-XMAKE_ROOT=y /path/to/xmake xdtc -P . gen
-rm -rf build
-XMAKE_ROOT=y /path/to/xmake -P .
+xmake xdtc -P "$PWD" -F "$PWD/xmake.lua" gen
+xmake f -P "$PWD" -F "$PWD/xmake.lua" -m release -y
+xmake -P "$PWD" -F "$PWD/xmake.lua"
 ./build/linux/x86_64/release/demo
 ```
 
@@ -701,7 +738,13 @@ third_party/lua-resty-template-LICENSE
 
 ## action 输入选择
 
-`modules/xdtc/action.lua` 负责声明校验、点分路径与函数选择及副本隔离；
-command.lua 在执行 action 前调用公共 select_action，应用读取器可复用同一接口。
+`modules/xdtc/action.lua` 校验 action 声明；`selection.lua` 负责点分路径、函数组装和副本隔离，供 action 和 read_config 共用。command.lua 在执行 action 前调用公共 select_action，应用读取器可复用同一接口。
 选择只作用于动作输入，gen/data 和 run 的数据语义保持不变。
 测试入口为 tests/command_run.lua，覆盖树改组后脚本保持不变、空对象、异常和修改隔离。
+
+
+## 配置引用的调用边界
+
+addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。
+
+board:select 的组装函数接收独立 root，返回 table；board:select 自身返回读取函数。这两个函数的职责和返回类型不同。read_config／select_action 立即返回 table，也不等价于配置引用。错误路径、标量或 nil 结果必须失败，不自动回退 root。对应测试为 tests/selection_run.lua；辅助接口的实际消费由索引集成测试覆盖。
