@@ -4,6 +4,7 @@ local pathops = import("xdtc.pathops")
 local metadata = import("xdtc.metadata")
 local generator = import("xdtc.generator")
 local debug_output = import("xdtc.debug_output")
+local action = import("xdtc.action")
 local sandbox = import("core.sandbox.sandbox")
 
 local _raw_loadfile = debug.global("loadfile")
@@ -12,7 +13,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.6.0"
+local VERSION = "0.7.0"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -284,7 +285,16 @@ function load_data(config)
     return load(_normalize_file(config.data, config.base_dir), { metadata = false })
 end
 
--- 执行脚本只接收完整数据；路径由调用入口解析。
+-- 应用读取器和命令分发复用 action 的输入选择，不依赖 root 的布局。
+function select_action(config, name, root)
+    local selected = config.actions and config.actions[name]
+    if not selected then
+        raise("xdtc: unknown action: %s", tostring(name))
+    end
+    return action.select(root, selected, name)
+end
+
+-- 执行脚本接收调用方提供的数据；路径由调用入口解析。
 function execute(script_path, data, args, opt)
     opt = opt or {}
     local filepath = _normalize_file(script_path, opt.base_dir)

@@ -1,5 +1,6 @@
 -- 命令分发与数据／模板实现分离；具体动作由消费工程注册。
 local xdtc = import("xdtc")
+local action = import("xdtc.action")
 local reserved = { gen = true, data = true, run = true }
 local raw_pairs = debug.global("pairs")
 
@@ -14,13 +15,11 @@ function run(config_path, command, args, opt)
     if type(actions) ~= "table" then
         raise("xdtc: config.actions must be a table")
     end
-    for name, script in raw_pairs(actions) do
+    for name, declaration in raw_pairs(actions) do
         if reserved[name] then
             raise("xdtc: action cannot override reserved command: %s", name)
         end
-        if type(name) ~= "string" or name == "" or type(script) ~= "string" or script == "" then
-            raise("xdtc: actions must map names to script paths")
-        end
+        action.validate(name, declaration)
     end
     if command == "gen" or command == "data" then
         if #args ~= 0 then
@@ -33,17 +32,20 @@ function run(config_path, command, args, opt)
         io.write("return " .. string.serialize(data, { orderkeys = true }) .. "\n")
         return data
     end
-    local script, forwarded
+    local script, forwarded, data
     if command == "run" then
         if #args == 0 then
             raise("xdtc: run requires a script path")
         end
         script, forwarded = args[1], table.slice(args, 2)
+        data = xdtc.load_data(config)
     else
-        script, forwarded = actions[command], args
-        if not script then
+        local declaration = actions[command]
+        if not declaration then
             raise("xdtc: unknown action: %s", command)
         end
+        script, forwarded = declaration.script, args
+        data = xdtc.select_action(config, command, xdtc.load_data(config))
     end
-    return xdtc.execute(script, xdtc.load_data(config), forwarded, { base_dir = config.base_dir })
+    return xdtc.execute(script, data, forwarded, { base_dir = config.base_dir })
 end

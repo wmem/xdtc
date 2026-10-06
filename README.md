@@ -1,14 +1,14 @@
-# xdtc v0.6.0
+# xdtc v0.7.0
 
 ## Xmake Addon 命令
 
 本仓库提供 Addon `xdtc`，安装后可以在消费工程中直接运行 `xmake xdtc gen`，无需复制工具源码或在工程中 `includes()`。默认读取启动目录的 `xdtc.lua`，`--config=<路径>` 可选择其他配置；显式 `-P <工程目录>` 时按该工程目录查找。选项必须位于子命令之前。
 
-分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。Addon `0.1.2` 提供新的 gen/data/run/action 命令入口，并继续提供命名空间代码生成规则与核心 API：
+分发配方位于 [xmake-addons-repo](../xmake-addons-repo/README.md)，由工具自己的 [准备脚本](scripts/prepare-addon.lua)安装运行资源。现有工程内接入入口保持可用。Addon `0.2.0` 提供新的 gen/data/run/action 命令入口，并继续提供命名空间代码生成规则与核心 API：
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.1.x")
+add_addons("xdtc 0.2.x")
 target("app")
     set_kind("binary")
     add_rules("@addon/xdtc/codegen", {config = "xdtc.lua"})
@@ -39,7 +39,7 @@ xmake xdtc --config=configs/board.lua gen
 
 `gen`、`data`、`run` 是保留命令，其他名称从配置的 `actions` 查找。
 `gen` 按 `tpl` 生成文件；`data` 只展开配置的 `data`，向 stdout 输出可加载的
-`return {...}` Lua 文本；`run` 及动作把完整展开数据传入脚本的 `main(config, ...)`。
+`return {...}` Lua 文本；`run` 把完整展开数据传入脚本的 `main(config, ...)`；action 按 select 筛选输入。
 后续位置参数原样传给脚本。没有子命令、未知动作、保留名称冲突、脚本缺少 main 或执行报错均失败退出。
 原来的隐式生成命令 `xmake xdtc --config=...` 已改为显式 `gen`，不保留旧 CLI 调用方式。
 自动构建规则与 `run_file()` 仍用于生成，无需改为启动 CLI 子进程。
@@ -50,10 +50,28 @@ return {
     data = "user_config/app_config.lua",
     tpl = {{files = {"templates/*.tpl"}, out = "user_code/app_config.c"}},
     actions = {
-        flash = path.join(components, "msp/tools/actions/flash.lua"),
+        flash = {
+            script = path.join(components, "msp/tools/actions/flash.lua"),
+            select = "tools.flash",
+        },
     },
 }
 ```
+
+action 必须为 `{script, select}`，不再接受旧的脚本路径字符串；迁移完整 root 输入时显式写
+`select = "."`。其他字符串是从 root 开始的点分对象路径，例如 `"serial"`、`"tools.console"`。
+字符串选择与函数返回值必须是 table；空 table 可用，缺失路径、标量、nil 或筛选异常均报错，
+不会回退为 root。包含点号的字段名或数组下标可以通过 Lua 函数选择。
+
+```lua
+select = function(root)
+    return {debug = root.board.debug, flash = root.tools.flash}
+end
+```
+
+只有选择配置依赖数据树布局；脚本维护自己输入对象的字段契约。函数接收独立数据副本，
+筛选结果也独立复制，避免修改影响后续生成或其他动作。gen/data 不执行 select；run 保持完整
+root 的通用脚本入口。`xdtc.select_action(config, name, root)` 供应用读取器复用同一选择逻辑。
 
 配置内部的 `data`、模板、输出和脚本路径默认相对于该配置文件；绝对路径直接使用。
 显式 `base_dir` 可覆盖，若它是相对路径，也相对于配置文件。API 选项 `base_dir`
@@ -238,7 +256,7 @@ target("app")
 
 ## 版本管理
 
-项目版本以 [`modules/xdtc.lua`](modules/xdtc.lua) 中的 `VERSION` 为准；`xdtc.version()` 返回不带 `v` 前缀的 `主版本.次版本.修订号`，Git 发布标签使用 `v` 前缀，例如 `v0.6.0`。仓库的 `xmake.lua` 不设置版本，以免覆盖宿主项目的版本信息。
+项目版本以 [`modules/xdtc.lua`](modules/xdtc.lua) 中的 `VERSION` 为准；`xdtc.version()` 返回不带 `v` 前缀的 `主版本.次版本.修订号`，Git 发布标签使用 `v` 前缀，例如 `v0.7.0`。仓库的 `xmake.lua` 不设置版本，以免覆盖宿主项目的版本信息。
 
 发布新版本时，修改 `VERSION`，同步本页标题和 [USAGE 中的版本示例](docs/USAGE.md#xdtcversion)，运行下方的完整回归测试；提交后，在该提交上创建同号 Git 标签。版本测试会检查 API 返回值与两处文档展示一致。
 

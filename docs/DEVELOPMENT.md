@@ -21,7 +21,7 @@ xdtc 的核心约束：
 ```text
 xmake.lua                       # 宿主工程 drop-in 入口：task("xdtc") + rule("xdtc.codegen")
 modules/
-├── xdtc.lua                 # 公共入口、data/config loader、run/run_file
+├── xdtc.lua                 # 公共入口、data/config loader、run/run_file/select_action
 └── xdtc/
     ├── integration.lua       # task/rule 共用运行桥接与 run-once
     ├── kind.lua              # Lua table 的 array/object 分类
@@ -697,3 +697,10 @@ third_party/lua-resty-template-LICENSE
 ```
 
 修改 template parser 时不要删除该 attribution/license。
+
+## action 输入选择
+
+`modules/xdtc/action.lua` 负责声明校验、点分路径与函数选择及副本隔离；
+command.lua 在执行 action 前调用公共 select_action，应用读取器可复用同一接口。
+选择只作用于动作输入，gen/data 和 run 的数据语义保持不变。
+测试入口为 tests/command_run.lua，覆盖树改组后脚本保持不变、空对象、异常和修改隔离。

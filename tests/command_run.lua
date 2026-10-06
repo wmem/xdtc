@@ -33,7 +33,7 @@ local function write_config(extra)
             .. "}"
     )
 end
-write_config("actions={inspect=\"scripts/check.lua\"}")
+write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
 io.writefile(
     path.join(directory, "scripts/check.lua"),
     [[
@@ -83,16 +83,16 @@ testcase("run 展开完整数据并转发位置参数", function()
 end)
 testcase("action 使用同一数据及脚本接口", function()
     check(command.run(configfile, "inspect", {}) == "checked", "动作失败")
-    write_config("actions={pairs=\"scripts/check.lua\"}")
+    write_config("actions={pairs={script=\"scripts/check.lua\",select=\".\"}}")
     check(command.run(configfile, "pairs", {}) == "checked", "动作名不应触发增强 pairs")
-    write_config("actions={inspect=\"scripts/check.lua\"}")
+    write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
 end)
 testcase("绝对路径与显式相对 base_dir", function()
     io.writefile(
         path.join(root, "absolute.lua"),
-        "return {base_dir=\"配置 空格\",data=\"data/root.lua\",actions={inspect="
+        "return {base_dir=\"配置 空格\",data=\"data/root.lua\",actions={inspect={script="
             .. string.format("%q", path.join(directory, "scripts/check.lua"))
-            .. "}}"
+            .. ",select=\".\"}}}"
     )
     check(
         command.run(path.join(root, "absolute.lua"), "inspect", {}) == "checked",
@@ -107,7 +107,7 @@ testcase("未知动作及保留名称拒绝覆盖", function()
     expect_error(function()
         command.run(configfile, "gen", {})
     end, "reserved command")
-    write_config("actions={inspect=\"scripts/check.lua\"}")
+    write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
 end)
 testcase("命令参数及配置错误明确报错", function()
     expect_error(function()
@@ -125,8 +125,8 @@ testcase("命令参数及配置错误明确报错", function()
     write_config("actions={inspect={}}")
     expect_error(function()
         command.run(configfile, "inspect", {})
-    end, "script paths")
-    write_config("actions={inspect=\"scripts/check.lua\"}")
+    end, "requires a script path")
+    write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
 end)
 testcase("脚本缺失、缺少 main 和执行失败", function()
     expect_error(function()
@@ -151,6 +151,129 @@ testcase("数据展开不生成文件或添加 metadata", function()
         "数据错误"
     )
     check(#data.values == 0, "replace 未生效")
+end)
+testcase("action 选择子对象并转发参数", function()
+    io.writefile(
+        path.join(directory, "scripts/serial.lua"),
+        [[
+function main(serial, argument)
+    assert(serial.port == "/dev/fixture" and serial.serial == nil and serial.node == nil)
+    return argument
+end
+]]
+    )
+    write_config("actions={serial={script=\"scripts/serial.lua\",select=\"serial\"}}")
+    check(
+        command.run(configfile, "serial", { "forwarded" }) == "forwarded",
+        "子对象或参数错误"
+    )
+end)
+testcase("嵌套对象路径与空对象", function()
+    local config = { actions = { nested = { script = "unused.lua", select = "tools.serial" } } }
+    check(
+        xdtc.select_action(config, "nested", { tools = { serial = { port = "nested" } } }).port
+            == "nested",
+        "嵌套选择错误"
+    )
+    config.actions.nested.select = "values"
+    check(
+        debug.global("next")(xdtc.select_action(config, "nested", { values = {} })) == nil,
+        "空对象应允许"
+    )
+end)
+testcase("函数组合输入并在对象树改组后保持脚本不变", function()
+    local script = path.join(directory, "scripts/serial.lua")
+    local before = io.readfile(script)
+    io.writefile(
+        path.join(directory, "data/moved.lua"),
+        "return {board={console={device=\"/dev/fixture\"}}}"
+    )
+    io.writefile(
+        configfile,
+        [[return {
+data="data/moved.lua",
+actions={serial={script="scripts/serial.lua",select=function(root)
+    return {port=root.board.console.device}
+end}}
+}]]
+    )
+    check(
+        command.run(configfile, "serial", { "moved" }) == "moved",
+        "改组后未使用新的选择"
+    )
+    check(io.readfile(script) == before, "不应修改脚本")
+    write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
+end)
+testcase("选择和脚本输入不修改原始数据", function()
+    local root = { serial = { port = "original" } }
+    local config = { actions = { inspect = { script = "unused.lua", select = "." } } }
+    local selected = xdtc.select_action(config, "inspect", root)
+    selected.serial.port = "changed"
+    check(root.serial.port == "original", "root 选择应隔离修改")
+    config.actions.inspect.select = function(data)
+        data.serial.port = "mapped"
+        return data.serial
+    end
+    selected = xdtc.select_action(config, "inspect", root)
+    check(
+        selected.port == "mapped" and root.serial.port == "original",
+        "函数修改不应影响 root"
+    )
+    selected.port = "script"
+    check(root.serial.port == "original", "脚本修改不应影响 root")
+end)
+testcase("未填写 select 和旧字符串声明明确拒绝", function()
+    for _, action in ipairs({ { script = "unused.lua" }, "unused.lua" }) do
+        expect_error(function()
+            xdtc.select_action({ actions = { inspect = action } }, "inspect", {})
+        end, type(action) == "table" and "requires select" or "must be {script, select}")
+    end
+end)
+testcase("非法路径、缺失对象及标量不会回退 root", function()
+    for _, selector in ipairs({ "", ".serial", "serial.", "tools..serial" }) do
+        expect_error(function()
+            xdtc.select_action(
+                { actions = { inspect = { script = "unused.lua", select = selector } } },
+                "inspect",
+                {}
+            )
+        end, "invalid select path")
+    end
+    expect_error(function()
+        xdtc.select_action(
+            { actions = { inspect = { script = "unused.lua", select = "absent" } } },
+            "inspect",
+            {}
+        )
+    end, "select path not found")
+    expect_error(function()
+        xdtc.select_action(
+            { actions = { inspect = { script = "unused.lua", select = "port" } } },
+            "inspect",
+            { port = false }
+        )
+    end, "select must return an object")
+end)
+testcase("函数异常和无对象返回值包含动作名称", function()
+    for _, selector in ipairs({
+        function()
+            error("selector failed")
+        end,
+        function()
+            return nil
+        end,
+        function()
+            return false
+        end,
+    }) do
+        expect_error(function()
+            xdtc.select_action(
+                { actions = { inspect = { script = "unused.lua", select = selector } } },
+                "inspect",
+                {}
+            )
+        end, "action 'inspect'")
+    end
 end)
 testcase("同一进程快速改写数据及脚本读取新内容", function()
     local entry = path.join(directory, "data/changing.lua")

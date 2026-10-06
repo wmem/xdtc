@@ -873,7 +873,7 @@ endmodule
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.6.0
+print(xdtc.version()) -- 0.7.0
 ```
 
 ### `xdtc.load_config(config_path, opt)`
@@ -1202,3 +1202,6 @@ examples/generator/   数据匹配 + 模板 + 代码生成
 `xdtc.execute(script_path, data, args, {base_dir=...})` 调用脚本的 main(data, ...)；
 args 是位置参数数组，脚本错误原样传播。入口和数据每次重新读取，不受 Xmake 秒级文件缓存影响。
 配置文件可通过 public API 转发另一份任务配置；load_config 返回的 base_dir 已规范化为绝对路径。
+
+应用读取器可调用 `xdtc.select_action(config, name, root)`，返回该 action 选择的独立数据对象。
+select 的路径、函数及错误约定统一见 [README](../README.md#xmake-addon-命令)。
