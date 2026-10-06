@@ -1,4 +1,4 @@
-# xdtc v0.7.0
+# xdtc v0.8.0
 
 ## Xmake Addon 命令
 
@@ -26,6 +26,21 @@ xmake xdtc gen
 xmake xdtc --config=xdtc.lua gen
 xmake xdtc -P /path/to/project --help
 ```
+
+## 在 Xmake 配置域中引用数据
+
+Addon 0.2.1 新增配置引用接口。`board:select()` **返回读取函数，不返回 table**；使用方在规则的脚本环境中显式调用该函数，才展开数据并取得对象。
+
+```lua
+includes("@addon/xdtc/config")
+local board = xdtc_config("xdtc.lua")
+
+add_rules("my.firmware", {
+    config = board:select("mcu"),
+})
+```
+
+字符串选择已有对象，函数可以组装多个对象。使用方负责自己的输入字段约定，xdtc 不解释 MCU 或工具参数。返回值、路径、错误和使用方完整调用方式见 [配置引用接口](docs/USAGE.md#xmake-配置引用接口)。
 
 ## 命令与工程动作
 

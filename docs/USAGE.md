@@ -866,6 +866,71 @@ endmodule
 
 ---
 
+## Xmake 配置引用接口
+
+从 Addon 0.2.1 起，工程可以在 `xmake.lua` 的配置域声明数据来源。先加载辅助接口：
+
+```lua
+includes("@addon/xdtc/config")
+local board = xdtc_config("xdtc.lua")
+```
+
+`xdtc_config(file)` 返回配置引用对象，不展开数据。`file` 默认 `xdtc.lua`，相对路径以调用处的 `xmake.lua` 所在目录为基准，声明时固定为绝对路径；绝对路径直接使用。它读取的是含 `data` 字段的任务配置入口，而不是直接执行数据 DSL 文件。
+
+### `board:select(selector)` 返回读取函数
+
+此方法返回一个零参数函数，**不是选出的 table**。创建函数时不加载文件，也不生成代码。使用方调用后，函数重新读取任务配置和数据文件，展开 include/remove/replace 等操作，返回两个值：选出的独立 table、实际数据文件所在的绝对目录。每次调用重新读取，已有结果不随文件变化自动更新。
+
+```lua
+local read_mcu = board:select("mcu")
+local read_root = board:select(".")
+local read_debug = board:select("hardware.debug")
+
+add_rules("my.firmware", {config = read_mcu})
+```
+
+`"."` 选择完整 root，其他字符串是从 root 开始的点分对象路径。需要组合字段、选择含点号的键或数组元素时，传入函数；该函数接收展开数据的独立副本并返回 table：
+
+```lua
+add_rules("my.tools", {
+    config = board:select(function(root)
+        return {
+            mcu = root.hardware.mcu,
+            debug = root.hardware.debug,
+            flash = root.tools.flash,
+        }
+    end),
+})
+```
+
+这里有两个函数：`select` 的参数函数负责组装数据，`select` 的返回函数负责延迟读取。组装函数只处理数据，使用配置域可用的 Lua 能力；不要在其中加载模块、操作文件或执行命令。
+
+缺失路径、非法路径、缺少 selector、标量结果、函数返回 nil 或抛出异常，均在调用读取函数时明确报错，不回退到 root。空 table 有效。函数输入与选择结果独立复制，不将使用方修改写回原始数据。读取不执行 action，不渲染模板，不增加模板 metadata。
+
+### 使用方必须调用读取函数
+
+`add_rules()` 的附加参数只保存声明，不会自动执行函数，也不会自动将它转换为配置对象。下面是接受 table 或读取函数的完整规则示例：
+
+```lua
+rule("my.firmware")
+    on_load(function(target)
+        local value = target:extraconf("rules", "my.firmware", "config")
+        local base
+        if type(value) == "function" then
+            -- 配置域声明的回调没有 import，先绑定到当前脚本环境。
+            local sandbox = import("core.sandbox.sandbox")
+            local read = sandbox.fork(value):script()
+            value, base = read()
+        end
+        assert(type(value) == "table", "config 必须为 table 或返回 table 的函数")
+        assert(type(value.chip) == "string", "config.chip 必须为字符串")
+        -- 根据 value 配置 target；base 用于解析数据中的相对资源路径。
+    end)
+rule_end()
+```
+
+规则不需要依赖 xdtc：它只接收 table 或函数，字段约定由规则维护。绑定步骤针对配置域声明的回调；不能直接假定在 `on_load` 中调用任意函数就能使用 `import`。普通静态配置也可以直接传 `config = {chip = "example"}`。
+
 ## 公共 API
 
 ### `xdtc.version()`
@@ -873,7 +938,7 @@ endmodule
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.7.0
+print(xdtc.version()) -- 0.8.0
 ```
 
 ### `xdtc.load_config(config_path, opt)`
@@ -887,6 +952,19 @@ local config, filepath = xdtc.load_config("xdtc.lua", {
 ```
 
 配置文件运行在 Xmake Lua sandbox 中，可使用 import 和常见 Xmake Lua 基础 API；`os.scriptdir()` 指向该配置文件所在目录。
+
+### `xdtc.read_config(config_path, selector, opt)`
+
+脚本域的立即读取接口，返回选中的 table 和实际数据文件目录；selector 与上述配置引用接口一致，`opt.base_dir` 只用于定位任务配置入口。它不返回读取函数：
+
+```lua
+local xdtc = import("@addon.xdtc.generator")
+local mcu, directory = xdtc.read_config("xdtc.lua", "mcu", {
+    base_dir = os.projectdir(),
+})
+```
+
+配置域的 `board:select()` 返回回调，该回调调用这里的立即读取接口。
 
 ### `xdtc.run_file(config_path, opt)`
 

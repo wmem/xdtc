@@ -5,6 +5,7 @@ local metadata = import("xdtc.metadata")
 local generator = import("xdtc.generator")
 local debug_output = import("xdtc.debug_output")
 local action = import("xdtc.action")
+local selection = import("xdtc.selection")
 local sandbox = import("core.sandbox.sandbox")
 
 local _raw_loadfile = debug.global("loadfile")
@@ -13,7 +14,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.7.0"
+local VERSION = "0.8.0"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -283,6 +284,15 @@ function load_data(config)
         raise("xdtc: config.data must be a non-empty string")
     end
     return load(_normalize_file(config.data, config.base_dir), { metadata = false })
+end
+
+-- 立即读取选定对象；配置域的 xdtc_config():select() 返回回调，由使用方延迟调用。
+function read_config(config_path, selector, opt)
+    local description = load_config(config_path, opt)
+    local root = load_data(description)
+    local data = selection.select(root, selector, "configuration")
+    local directory = path.directory(_normalize_file(description.data, description.base_dir))
+    return data, directory
 end
 
 -- 应用读取器和命令分发复用 action 的输入选择，不依赖 root 的布局。

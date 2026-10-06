@@ -613,6 +613,7 @@ tests/run.lua            data loader / DSL / merge / metadata
 tests/template_run.lua   template parser/compiler/runtime
 tests/generator_run.lua  discovery / matching / context / aggregation / input_template
 tests/command_run.lua    子命令、动作、路径和快速重写回归
+tests/selection_run.lua  配置对象读取、组合、目录和修改隔离
 tests/config_run.lua     standalone xdtc.lua / load_config / run_file
 tests/integration_run.lua Xmake integration bridge / run-once / optional
 ```

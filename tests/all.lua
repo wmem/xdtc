@@ -7,6 +7,7 @@ local suites = {
     "config_run.lua",
     "integration_run.lua",
     "command_run.lua",
+    "selection_run.lua",
 }
 
 for _, suite in ipairs(suites) do
