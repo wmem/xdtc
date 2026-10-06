@@ -33,6 +33,9 @@ Addon 0.2.1 新增配置引用接口。`board:select()` **返回读取函数，�
 
 ```lua
 includes("@addon/xdtc/config")
+if type(xdtc_config) ~= "function" then
+    return -- 首次安装插件后，Xmake 会重新读取工程。
+end
 local board = xdtc_config("xdtc.lua")
 
 add_rules("my.firmware", {

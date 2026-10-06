@@ -868,10 +868,14 @@ endmodule
 
 ## Xmake 配置引用接口
 
-从 Addon 0.2.1 起，工程可以在 `xmake.lua` 的配置域声明数据来源。先加载辅助接口：
+从 Addon 0.2.1 起，工程可以在 `xmake.lua` 的配置域声明数据来源。工程需先配置插件仓库并声明该版本的依赖；已有工程可以用 `xmake addon --upgrade -y` 更新锁定版本。加载辅助接口：
 
 ```lua
 includes("@addon/xdtc/config")
+-- 首次解析时插件可能尚未安装；安装完成后 Xmake 会重新读取工程。
+if type(xdtc_config) ~= "function" then
+    return
+end
 local board = xdtc_config("xdtc.lua")
 ```
 
