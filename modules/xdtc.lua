@@ -14,7 +14,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.8.1"
+local VERSION = "0.9.0"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -331,9 +331,10 @@ function execute(script_path, data, args, opt)
         nocache = true,
     })
     if type(script.main) ~= "function" then
-        raise("xdtc: script must define main(config): %s", filepath)
+        raise("xdtc: script must define main(data, api, ...): %s", filepath)
     end
-    return script.main(data, table.unpack(args or {}))
+    local api = import("xdtc.script_api").new(path.directory(filepath))
+    return script.main(data, api, table.unpack(args or {}))
 end
 
 function build(entry_path, opt)

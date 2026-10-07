@@ -1,6 +1,6 @@
 # xdtc 使用文档
 
-推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.8.1 对应 Addon 0.2.2。
+推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.9.0 对应 Addon 0.3.0。
 
 ## 最小完整示例
 
@@ -21,7 +21,7 @@ project/
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.2.2")
+add_addons("xdtc 0.3.0")
 
 target("app")
     set_kind("binary")
@@ -882,7 +882,7 @@ rule_end()
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.8.1
+print(xdtc.version()) -- 0.9.0
 ```
 
 ### `xdtc.load_config(config_path, opt)`
@@ -918,7 +918,7 @@ local tools = xdtc.select_action(description, "inspect", root)
 
 ### `xdtc.execute(script_path, data, args, opt)`
 
-调用脚本的 `main(data, ...)`，返回脚本结果。`args` 是位置参数数组，默认空数组；`opt.base_dir` 用于解析相对脚本路径，默认当前工作目录。入口模块按脚本自己的目录加载；缺失脚本、缺少 main 或脚本执行失败会报错。
+调用脚本的 `main(data, api, ...)`，返回脚本结果。api 由执行入口创建，能力和参数约定见 [脚本 API](#脚本-api)。`args` 是位置参数数组，默认空数组；`opt.base_dir` 用于解析相对脚本路径，默认当前工作目录。入口模块按脚本自己的目录加载；缺失脚本、缺少 main 或脚本执行失败会报错。
 
 ```lua
 xdtc.execute("scripts/inspect.lua", tools, {"message"}, {
@@ -1276,7 +1276,7 @@ xmake xdtc --config=configs/xdtc.lua gen
 | `run` | 展开完整 root，交给指定脚本的 main | 第一个是脚本路径，其余转发 |
 | action 名 | 展开 root，按 action.select 选择对象，交给 action.script 的 main | 全部转发 |
 
-`data/run/action` 不添加模板 metadata，保留未启用节点和模板描述字段；不渲染模板、不写生成文件。run 和 action 脚本自己执行的文件或硬件操作由脚本负责。没有子命令、未知动作、保留名称冲突、错误 action 声明、脚本缺少 main 或执行失败，均非零退出。CLI 会检查所有 actions 的声明，但 gen/data 不调用选择函数。旧的无子命令生成和 action 路径字符串形式不再接受。
+`data/run/action` 不添加模板 metadata，保留未启用节点和模板描述字段；不会自动渲染模板或写生成文件。run 和 action 脚本可以调用 api.template 主动渲染，文件或硬件操作由脚本负责。没有子命令、未知动作、保留名称冲突、错误 action 声明、脚本缺少 main 或执行失败，均非零退出。CLI 会检查所有 actions 的声明，但 gen/data 不调用选择函数。旧的无子命令生成和 action 路径字符串形式不再接受。
 
 ### action 输入
 
@@ -1297,7 +1297,7 @@ return {
 `scripts/inspect.lua` 接收选中的 MCU 对象：
 
 ```lua
-function main(mcu, message)
+function main(mcu, api, message)
     print("%s: %s", message or "inspect", mcu.chip)
 end
 ```
@@ -1317,12 +1317,42 @@ end
 run 不应用 action 的 select。例如 `scripts/check.lua` 接收完整 root：
 
 ```lua
-function main(root, message)
+function main(root, api, message)
     print("%s: %s", message or "check", root.mcu.chip)
 end
 ```
 
 运行 `xmake xdtc run scripts/check.lua demo` 同样输出 `demo: example-mcu`，但输入形状与 inspect action 不同。
+
+### 脚本 API
+
+工具 v0.9.0／Addon 0.3.0 起，run 和 action 统一调用 `main(data, api, ...)`。第一个参数的数据语义不变：run 提供完整 root，action 提供选择结果。第二个参数 api 是每次执行新建的 table；其余参数保持命令行顺序。api 不加入数据树，也不注入脚本全局环境。
+
+**这是脚本参数契约的变更。** 原来 `main(data, message)` 需要改为 `main(data, api, message)`；`main(data, ...)` 若要接收命令参数，也必须显式留出第二个 api 参数。只使用第一个参数的脚本可以继续忽略额外参数。没有旧参数布局的自动兼容。
+
+api 当前只提供模板能力。以下为 action 脚本示例；是否渲染、传入哪个 table、是否写文件由脚本决定：
+
+```lua
+function main(data, api, output)
+    local content = api.template.render_file(
+        "templates/uart.c.tpl",
+        {baud_rate = data.baud_rate},
+        {escape = false}
+    )
+    io.writefile(path.join(os.scriptdir(), output), content)
+end
+```
+
+模板内容可以是 `unsigned baud = {{ baud_rate }};`，普通 table 无需 enable、match 或模板 metadata。方法使用点调用：
+
+| 方法 | 输入与结果 |
+| --- | --- |
+| `api.template.render(source, table, opt)` | 渲染模板字符串，返回字符串 |
+| `api.template.render_file(file, table, opt)` | 读取并渲染模板文件，返回字符串 |
+
+这两个接口复用 [模板引擎](#xdtctemplate) 的语法和选项。默认 escape=true，对 `{{ }}` 输出进行 HTML 转义；生成 C 等代码通常显式传入 `{escape = false}`。文件模板的相对路径以 **当前脚本所在目录** 为基准，绝对路径直接使用；与任务配置内 tpl 的路径基准不同。文件缺失、模板编译错误和渲染异常会向调用方传播，CLI 非零退出。接口本身不写输出文件，也不重新加载数据。
+
+API 对象及其 template 子对象在各次执行间独立；脚本修改该对象不改变后续执行收到的能力对象。
 
 ### 路径基准
 
@@ -1334,6 +1364,7 @@ end
 | load_config/run_file/read_config/read_action_config 的配置入口 | opt.base_dir；未指定时是当前工作目录 |
 | 任务配置内的 data、模板、输出、run／action 脚本 | 该任务配置文件的目录，或它显式声明的 base_dir |
 | 数据 DSL 的 include | 当前执行的数据文件目录 |
+| api.template.render_file 的模板文件 | 当前 run／action 脚本所在目录 |
 
 绝对路径直接使用。任务配置中的相对 base_dir 也以配置文件目录为基准；API 的 opt.base_dir 只定位配置入口，不改变配置内部的路径基准。直接 `xdtc.run(table)` 时，table 中的 base_dir 用于解析数据和生成任务。
 

@@ -30,6 +30,7 @@ modules/
 ├── xdtc.lua                 # 公共入口、加载、生成、read_config/read_action_config/select_action/execute
 └── xdtc/
     ├── command.lua           # 保留命令与工程 action 分发
+    ├── script_api.lua        # 每次执行的能力对象、模板渲染和脚本目录绑定
     ├── action.lua            # action 声明校验，复用对象选择
     ├── selection.lua         # 对象路径、函数组装和副本隔离
     ├── integration.lua       # 源码规则的 run-once/optional 桥接
@@ -624,6 +625,7 @@ xmake lua tests/config_run.lua
 xmake lua tests/integration_run.lua
 xmake lua tests/command_run.lua
 xmake lua tests/selection_run.lua
+xmake lua tests/script_api_run.lua
 ```
 
 ### DTC 兼容回归
@@ -640,11 +642,12 @@ tests/template_run.lua   template parser/compiler/runtime
 tests/generator_run.lua  discovery / matching / context / aggregation / input_template
 tests/command_run.lua    子命令、动作、路径和快速重写回归
 tests/selection_run.lua  配置对象读取、组合、目录和修改隔离
+tests/script_api_run.lua 脚本 API、按需渲染、路径与执行间隔离
 tests/config_run.lua     standalone xdtc.lua / load_config / run_file
 tests/integration_run.lua Xmake integration bridge / run-once / optional
 ```
 
-新功能应放到对应层测试；跨层行为再补 generator 端到端测试。2026-10-06 在上述本机环境运行八个源码套件，62 项检查通过。真实 Addon 安装、命名空间导入和配置域引用由 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)验证，源码测试不替代插件分发验证。
+新功能应放到对应层测试；跨层行为再补 generator 端到端测试。2026-10-07 在上述本机环境运行 v0.9.0 的九个源码套件，69 项检查通过。真实 Addon 安装、命名空间导入和配置域引用由 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)验证，源码测试不替代插件分发验证。
 
 ### 本地准备插件
 
@@ -749,3 +752,10 @@ third_party/lua-resty-template-LICENSE
 addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。select_action(name) 的回调调用 read_action_config，在相同加载流程之后复用 actions[name].select，不执行 action 脚本；因此工程不需要另外提供包装读取模块。
 
 board:select 的组装函数接收独立 root，返回 table；board:select 自身返回读取函数。这两个函数的职责和返回类型不同。read_config／read_action_config／select_action 立即返回 table，也不等价于配置引用。错误路径、标量或 nil 结果必须失败，不自动回退 root。对应测试为 tests/selection_run.lua；辅助接口的实际消费由索引集成测试覆盖。
+
+
+## 脚本能力与参数边界
+
+execute 在解析和加载脚本后，通过 [script_api.lua](../modules/xdtc/script_api.lua) 创建独立 api，调用 `main(data, api, ...)`。command 的 run 与 action 共用此入口；api 与数据、命令参数分别传入，没有全局环境注入，也不根据脚本签名兼容旧参数布局。位置参数从第三个参数开始。
+
+api.template 的 render/render_file 复用现有模板模块；render_file 将相对路径绑定到当前脚本目录。API 对象每次执行新建，使用方修改不会影响下一次执行；模板内容缓存由模板引擎按既有规则管理，不引入第二套渲染器。脚本自己决定是否渲染和写文件。源码回归入口为 [script_api_run.lua](../tests/script_api_run.lua)，真实 Addon 消费由索引测试验证。

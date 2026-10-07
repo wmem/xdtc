@@ -37,7 +37,8 @@ write_config("actions={inspect={script=\"scripts/check.lua\",select=\".\"}}")
 io.writefile(
     path.join(directory, "scripts/check.lua"),
     [[
-function main(config, expected)
+function main(config, api, expected)
+    assert(type(api.template.render) == "function")
     assert(config.name == nil and config.serial.name == nil)
     assert(config.node.value == 42 and #config.values == 0 and config.disabled.enable == false)
     assert(config.serial.port == "/dev/fixture")
@@ -156,7 +157,8 @@ testcase("action 选择子对象并转发参数", function()
     io.writefile(
         path.join(directory, "scripts/serial.lua"),
         [[
-function main(serial, argument)
+function main(serial, api, argument)
+    assert(type(api.template.render_file) == "function")
     assert(serial.port == "/dev/fixture" and serial.serial == nil and serial.node == nil)
     return argument
 end
