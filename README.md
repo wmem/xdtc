@@ -2,7 +2,7 @@
 
 xdtc 是运行在 **Xmake 内置 Lua** 上的数据树和代码生成工具。工程用 Lua 描述配置，用模板描述代码；xdtc 展开继承、覆盖和删除操作后，按配置生成文件，也可以把选出的数据交给构建规则或操作脚本。
 
-推荐通过 Xmake Addon 使用。当前工具版本为 **v0.9.0**，对应 Addon **0.3.0**；两个版本分别管理。需要支持 `add_addons` 的 Xmake，本机验证版本为 `3.1.1+HEAD.3ba37a0`。xdtc 不需要系统 Lua、Node.js 或其他语言运行时。
+推荐通过 Xmake Addon 使用。当前工具版本为 **v0.9.0**，对应 Addon **0.9.0**；Addon 与工具发布版本统一。需要支持 `add_addons` 的 Xmake，本机验证版本为 `3.1.1+HEAD.3ba37a0`。xdtc 不需要系统 Lua、Node.js 或其他语言运行时。
 
 ## 工程中的文件如何配合
 
@@ -24,7 +24,7 @@ xdtc 是运行在 **Xmake 内置 Lua** 上的数据树和代码生成工具。�
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.3.0")
+add_addons("xdtc 0.9.0")
 
 target("generated")
     set_kind("phony")
@@ -92,7 +92,7 @@ run 和 action 均调用 `main(data, api, ...)`：第一个参数为数据，第
 
 ## 给构建规则提供配置
 
-Addon 0.3.0 提供配置引用接口。下面是调用已定义的 `my.firmware`、`my.tools` 规则的片段：
+Addon 0.9.0 提供配置引用接口。下面是调用已定义的 `my.firmware`、`my.tools` 规则的片段：
 
 ```lua
 includes("@addon/xdtc/config")
@@ -143,7 +143,7 @@ CLI 默认从启动目录找 `xdtc.lua`，显式 `-P` 时从所选工程目录�
 
 ## 开发与验证
 
-工具源码版本以 [modules/xdtc.lua](modules/xdtc.lua) 的 `VERSION` 为准。发布代码版本时同步本页标题和 USAGE 的版本示例，在已验证提交上创建对应 Git 标签，如 `v0.9.0`。Addon 配方版本由 [插件索引仓库](https://github.com/wmem/xmake-addons/blob/master/README.md)独立维护，固定工具源码提交；更新文档不需要改变运行时版本。
+工具源码版本以 [modules/xdtc.lua](modules/xdtc.lua) 的 `VERSION` 为准。发布代码版本时同步本页标题和 USAGE 的版本示例，在已验证提交上创建对应 Git 标签，如 `v0.9.0`。Addon 配方由 [插件索引仓库](https://github.com/wmem/xmake-addons/blob/master/README.md)发布同号版本，固定对应工具源码发布提交；更新文档不需要改变运行时版本。
 
 在工具仓库根目录执行 `xmake lua tests/all.lua`。回归覆盖数据、模板、生成、DTC 行为、任务配置、源码集成、命令和配置对象读取；套件入口与验证说明见 [开发文档](docs/DEVELOPMENT.md#开发与测试)。Addon 的真实安装与消费验证位于 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)，v0.9.0／Addon 0.3.0 的结果见 [脚本 API 验证](https://github.com/wmem/xmake-addons/blob/master/tests/validation-xdtc-script-api.json)。
 

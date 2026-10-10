@@ -1,6 +1,6 @@
 # xdtc 使用文档
 
-推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.9.0 对应 Addon 0.3.0。
+推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.9.0 对应 Addon 0.9.0。
 
 ## 最小完整示例
 
@@ -21,7 +21,7 @@ project/
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.3.0")
+add_addons("xdtc 0.9.0")
 
 target("app")
     set_kind("binary")
