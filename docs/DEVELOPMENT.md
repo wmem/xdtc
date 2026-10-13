@@ -761,4 +761,4 @@ execute 在解析和加载脚本后，通过 [script_api.lua](../modules/xdtc/sc
 
 api.template 的 render/render_file 复用现有模板模块；外部脚本的 render_file 将相对路径绑定到当前脚本目录，内联 action 则绑定到任务配置的 base_dir。直接调用 execute_entry 时使用 opt.base_dir，未提供则为当前工作目录。API 对象每次执行新建，使用方修改不会影响下一次执行；模板内容缓存由模板引擎按既有规则管理，不引入第二套渲染器。执行入口自己决定是否渲染和写文件。源码回归入口为 [script_api_run.lua](../tests/script_api_run.lua)，真实 Addon 消费由索引测试验证。
 
-entry 的回归应覆盖与 script 的互斥校验、显式 select、参数顺序和返回值、异常传播、相对资源路径、每次独立 API，以及 read_action_config/select_action 不调用 entry。工具源码 v0.10.0 对应新 Addon 配方 0.4.0，当前本地开发与验证不代表远程版本已发布；上文 v0.9.0 的执行记录只说明该历史版本。
+entry 的回归应覆盖与 script 的互斥校验、显式 select、参数顺序和返回值、异常传播、相对资源路径、每次独立 API，以及 read_action_config/select_action 不调用 entry。工具源码与 Addon 统一为 0.10.0；源码回归和安装验证分别记录，上文 v0.9.0 的执行记录只说明该历史版本。

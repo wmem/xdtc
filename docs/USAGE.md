@@ -1,6 +1,6 @@
 # xdtc 使用文档
 
-推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。当前工具源码 v0.10.0 对应新 Addon 配方 0.4.0，仍处于本地开发与验证阶段，尚未远程发布；旧配方 0.3.0 不提供 action `entry`。版本化安装示例适用于配方发布后的消费；本地准备方法见 [开发文档](DEVELOPMENT.md#本地准备插件)。
+推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。当前工具源码与 Addon 版本统一为 0.10.0，新增 action `entry`；本地准备方法见 [开发文档](DEVELOPMENT.md#本地准备插件)。
 
 ## 最小完整示例
 
@@ -21,7 +21,7 @@ project/
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.4.0")
+add_addons("xdtc 0.10.0")
 
 target("app")
     set_kind("binary")
@@ -1316,7 +1316,7 @@ end
 
 `xmake xdtc inspect demo` 输出 `demo: example-mcu`。inspect、flash、console 等名字均由工程声明，xdtc 不内置这些操作。
 
-工具 v0.10.0／Addon 0.4.0 新增内联 `entry`，可在 action 中直接定义运行函数。例如用下面的 action 替换 `inspect`，不再需要 `scripts/inspect.lua`：
+工具 v0.10.0／Addon 0.10.0 新增内联 `entry`，可在 action 中直接定义运行函数。例如用下面的 action 替换 `inspect`，不再需要 `scripts/inspect.lua`：
 
 ```lua
 inspect = {
