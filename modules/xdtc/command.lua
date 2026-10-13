@@ -46,6 +46,11 @@ function run(config_path, command, args, opt)
         end
         script, forwarded = declaration.script, args
         data = xdtc.select_action(config, command, xdtc.load_data(config))
+        if declaration.entry then
+            return xdtc.execute_entry(declaration.entry, data, forwarded, {
+                base_dir = config.base_dir,
+            })
+        end
     end
     return xdtc.execute(script, data, forwarded, { base_dir = config.base_dir })
 end

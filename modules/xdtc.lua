@@ -14,7 +14,7 @@ local _raw_pairs = debug.global("pairs")
 local _raw_ipairs = debug.global("ipairs")
 local _setfenv = debug.setfenv
 
-local VERSION = "0.9.0"
+local VERSION = "0.10.0"
 
 local function _normalize_file(filepath, base_dir)
     if type(filepath) ~= "string" or #filepath == 0 then
@@ -314,6 +314,17 @@ function read_action_config(config_path, name, opt)
 end
 
 -- 执行脚本接收调用方提供的数据；路径由调用入口解析。
+-- 内联 action 与外部脚本使用同一参数顺序；读取 action 配置不调用此入口。
+function execute_entry(entry, data, args, opt)
+    if type(entry) ~= "function" then
+        raise("xdtc: entry must be a function")
+    end
+    opt = opt or {}
+    local directory = path.absolute(opt.base_dir or os.workingdir())
+    local api = import("xdtc.script_api").new(directory)
+    return entry(data, api, table.unpack(args or {}))
+end
+
 function execute(script_path, data, args, opt)
     opt = opt or {}
     local filepath = _normalize_file(script_path, opt.base_dir)

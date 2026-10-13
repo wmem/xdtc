@@ -1,6 +1,6 @@
 # xdtc 使用文档
 
-推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。工具 v0.9.0 对应 Addon 0.3.0。
+推荐通过 Xmake Addon 使用。本页先给出可以生成并编译 C 源文件的完整例子，再说明构建接入和数据 DSL；命令、配置引用、模板与公共 API 可通过标题直接查询。当前工具源码 v0.10.0 对应新 Addon 配方 0.4.0，仍处于本地开发与验证阶段，尚未远程发布；旧配方 0.3.0 不提供 action `entry`。版本化安装示例适用于配方发布后的消费；本地准备方法见 [开发文档](DEVELOPMENT.md#本地准备插件)。
 
 ## 最小完整示例
 
@@ -21,7 +21,7 @@ project/
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.3.0")
+add_addons("xdtc 0.4.0")
 
 target("app")
     set_kind("binary")
@@ -849,7 +849,7 @@ return {
 }
 ```
 
-调用读取函数时才展开数据并应用该 action 的选择器，返回独立 table 和实际数据文件目录；支持 `"."`、子对象路径和函数组装，与命令执行共用选择规则。每次调用重新读取。未知 action、声明不合法或选择结果不是 table 时明确失败；没有默认 root 回退。读取不会检查脚本文件是否存在或调用它，也不会执行代码生成。action 声明仍需遵循 `{script, select}` 契约。
+调用读取函数时才展开数据并应用该 action 的选择器，返回独立 table 和实际数据文件目录；支持 `"."`、子对象路径和函数组装，与命令执行共用选择规则。每次调用重新读取。未知 action、声明不合法或选择结果不是 table 时明确失败；没有默认 root 回退。读取不会检查脚本文件是否存在、调用脚本或调用内联 `entry`，也不会执行代码生成。action 声明需遵循 `{script, select}` 或 `{entry, select}` 契约，两种入口互斥。
 
 ### 使用方必须调用读取函数
 
@@ -882,7 +882,7 @@ rule_end()
 返回当前 xdtc 版本号，例如：
 
 ```lua
-print(xdtc.version()) -- 0.9.0
+print(xdtc.version()) -- 0.10.0
 ```
 
 ### `xdtc.load_config(config_path, opt)`
@@ -908,7 +908,7 @@ local root = xdtc.load_data(description)
 
 ### `xdtc.select_action(config, name, root)`
 
-按 `config.actions[name].select` 选择已有 root 中的对象，立即返回独立 table，不执行 action 脚本、不重新加载数据。选择规则见 [action 输入](#action-输入)。
+按 `config.actions[name].select` 选择已有 root 中的对象，立即返回独立 table，不执行 action 的 script 或 entry、不重新加载数据。选择规则见 [action 输入](#action-输入)。
 
 ```lua
 local tools = xdtc.select_action(description, "inspect", root)
@@ -925,6 +925,18 @@ xdtc.execute("scripts/inspect.lua", tools, {"message"}, {
     base_dir = description.base_dir,
 })
 ```
+
+### `xdtc.execute_entry(entry, data, args, opt)`
+
+直接调用函数的 `entry(data, api, ...)` 并返回结果。`entry` 必须为函数，`args` 是位置参数数组，默认空数组；`api` 每次独立创建。`opt.base_dir` 是 api 模板资源的路径基准，默认当前工作目录；action 命令传入任务配置的 `base_dir`。此接口不读取数据、不选择对象，也不创建外部脚本模块：
+
+```lua
+xdtc.execute_entry(function(data, api, message)
+    print("%s: %s", message, data.chip)
+end, tools, {"inspect"}, {base_dir = description.base_dir})
+```
+
+入口异常向调用方传播；数据参数由调用方提供，若需要配置选择与副本隔离，先使用 `select_action/read_action_config`。
 
 ### `xdtc.read_config(config_path, selector, opt)`
 
@@ -1274,9 +1286,9 @@ xmake xdtc --config=configs/xdtc.lua gen
 | `gen` | 按配置的 tpl 生成文件，默认添加模板 metadata | 不接受 |
 | `data` | 展开完整 root，向 stdout 输出可加载的 `return {...}` Lua 文本 | 不接受 |
 | `run` | 展开完整 root，交给指定脚本的 main | 第一个是脚本路径，其余转发 |
-| action 名 | 展开 root，按 action.select 选择对象，交给 action.script 的 main | 全部转发 |
+| action 名 | 展开 root，按 action.select 选择对象，交给 script 的 main 或内联 entry | 全部转发 |
 
-`data/run/action` 不添加模板 metadata，保留未启用节点和模板描述字段；不会自动渲染模板或写生成文件。run 和 action 脚本可以调用 api.template 主动渲染，文件或硬件操作由脚本负责。没有子命令、未知动作、保留名称冲突、错误 action 声明、脚本缺少 main 或执行失败，均非零退出。CLI 会检查所有 actions 的声明，但 gen/data 不调用选择函数。旧的无子命令生成和 action 路径字符串形式不再接受。
+`data/run/action` 不添加模板 metadata，保留未启用节点和模板描述字段；不会自动渲染模板或写生成文件。run 和 action 的执行入口可以调用 api.template 主动渲染，文件或硬件操作由入口负责。没有子命令、未知动作、保留名称冲突、错误 action 声明、脚本缺少 main 或执行失败，均非零退出。CLI 会检查所有 actions 的声明，但 gen/data 不调用选择函数或 entry。旧的无子命令生成和 action 路径字符串形式不再接受。
 
 ### action 输入
 
@@ -1304,6 +1316,42 @@ end
 
 `xmake xdtc inspect demo` 输出 `demo: example-mcu`。inspect、flash、console 等名字均由工程声明，xdtc 不内置这些操作。
 
+工具 v0.10.0／Addon 0.4.0 新增内联 `entry`，可在 action 中直接定义运行函数。例如用下面的 action 替换 `inspect`，不再需要 `scripts/inspect.lua`：
+
+```lua
+inspect = {
+    select = "mcu",
+    entry = function(mcu, api, message)
+        print("%s: %s", message or "inspect", mcu.chip)
+    end,
+}
+```
+
+每个 action 必须且只能提供一个非空 `script` 路径或一个 `entry` 函数；二者同时提供、二者均缺失或 `entry` 类型错误均失败。`select` 对两种入口都必填。参数统一为 `data, api, ...`，返回值向命令分发层返回，异常向调用方传播；CLI 不自动打印函数返回值。
+
+内联入口可导入 Addon。下面是工程片段，要求已经安装 `x-pyocd/x-console`，且 `tools.download/tools.console` 已按各插件合同配置完整参数：
+
+```lua
+actions = {
+    flash = {
+        select = "tools.download",
+        entry = function(config, api, ...)
+            local pyocd = import("@addon.x-pyocd.api", {anonymous = true})
+            return pyocd.flash(config)
+        end,
+    },
+    console = {
+        select = "tools.console",
+        entry = function(config, api, ...)
+            local console = import("@addon.x-console.api", {anonymous = true})
+            return console.open(config)
+        end,
+    },
+}
+```
+
+随后执行 `xmake xdtc flash` 或 `xmake xdtc console`。运行系统、速率、芯片等字段仍由选择出的 config 提供，xdtc 不补充硬件默认值，也不把位置参数自动转换成插件选项。配置合同分别见 [x-pyocd](https://github.com/wmem/x-pyocd#通过-config-指定执行方式) 和 [x-console](https://github.com/wmem/x-console#linux-与-windows-配置)。
+
 select 必须显式填写。`"."` 选择整个 root，其他字符串选择点分对象路径，例如 `"mcu"` 或 `"tools.debug"`。函数可组装对象：
 
 ```lua
@@ -1312,7 +1360,7 @@ select = function(root)
 end
 ```
 
-字符串选择和函数返回值必须为 table；空 table 有效，缺失路径、非法路径、标量、nil 和选择函数异常均报错，不回退 root。含点号的字段名或数组下标用函数选择。函数接收独立副本，返回对象也独立复制；脚本修改不会影响原始 root。脚本只约定输入字段，树结构变化由 action 的选择配置适配。
+字符串选择和函数返回值必须为 table；空 table 有效，缺失路径、非法路径、标量、nil 和选择函数异常均报错，不回退 root。含点号的字段名或数组下标用函数选择。函数接收独立副本，返回对象也独立复制；script 或 entry 修改选择结果不会影响原始 root。执行入口只约定输入字段，树结构变化由 action 的选择配置适配。
 
 run 不应用 action 的 select。例如 `scripts/check.lua` 接收完整 root：
 
@@ -1350,7 +1398,7 @@ end
 | `api.template.render(source, table, opt)` | 渲染模板字符串，返回字符串 |
 | `api.template.render_file(file, table, opt)` | 读取并渲染模板文件，返回字符串 |
 
-这两个接口复用 [模板引擎](#xdtctemplate) 的语法和选项。默认 escape=true，对 `{{ }}` 输出进行 HTML 转义；生成 C 等代码通常显式传入 `{escape = false}`。文件模板的相对路径以 **当前脚本所在目录** 为基准，绝对路径直接使用；与任务配置内 tpl 的路径基准不同。文件缺失、模板编译错误和渲染异常会向调用方传播，CLI 非零退出。接口本身不写输出文件，也不重新加载数据。
+这两个接口复用 [模板引擎](#xdtctemplate) 的语法和选项。默认 escape=true，对 `{{ }}` 输出进行 HTML 转义；生成 C 等代码通常显式传入 `{escape = false}`。外部脚本的文件模板相对路径以 **当前脚本所在目录** 为基准；内联 action `entry` 以 **任务配置的 base_dir** 为基准，没有显式 base_dir 时即配置文件目录。绝对路径直接使用。文件缺失、模板编译错误和渲染异常会向调用方传播，CLI 非零退出。接口本身不写输出文件，也不重新加载数据。
 
 API 对象及其 template 子对象在各次执行间独立；脚本修改该对象不改变后续执行收到的能力对象。
 
@@ -1365,6 +1413,7 @@ API 对象及其 template 子对象在各次执行间独立；脚本修改该对
 | 任务配置内的 data、模板、输出、run／action 脚本 | 该任务配置文件的目录，或它显式声明的 base_dir |
 | 数据 DSL 的 include | 当前执行的数据文件目录 |
 | api.template.render_file 的模板文件 | 当前 run／action 脚本所在目录 |
+| 内联 action entry 中 api.template.render_file 的模板文件 | 任务配置的 base_dir；默认配置文件所在目录 |
 
 绝对路径直接使用。任务配置中的相对 base_dir 也以配置文件目录为基准；API 的 opt.base_dir 只定位配置入口，不改变配置内部的路径基准。直接 `xdtc.run(table)` 时，table 中的 base_dir 用于解析数据和生成任务。
 

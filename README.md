@@ -1,15 +1,15 @@
-# xdtc v0.9.0
+# xdtc v0.10.0
 
 xdtc 是运行在 **Xmake 内置 Lua** 上的数据树和代码生成工具。工程用 Lua 描述配置，用模板描述代码；xdtc 展开继承、覆盖和删除操作后，按配置生成文件，也可以把选出的数据交给构建规则或操作脚本。
 
-推荐通过 Xmake Addon 使用。当前工具版本为 **v0.9.0**，对应 Addon **0.3.0**；两个版本分别管理。需要支持 `add_addons` 的 Xmake，本机验证版本为 `3.1.1+HEAD.3ba37a0`。xdtc 不需要系统 Lua、Node.js 或其他语言运行时。
+推荐通过 Xmake Addon 使用。当前工具源码版本为 **v0.10.0**，对应新 Addon 配方 **0.4.0**；两个版本分别管理。本次版本处于本地开发与验证阶段，尚未远程发布；已有 Addon 0.3.0 不提供新增的 action `entry`。需要支持 `add_addons` 的 Xmake，本机验证版本为 `3.1.1+HEAD.3ba37a0`。xdtc 不需要系统 Lua、Node.js 或其他语言运行时。
 
 ## 工程中的文件如何配合
 
 | 文件 | 职责 |
 | --- | --- |
 | `xmake.lua` | 声明插件、构建目标和规则；使用方决定怎样消费配置 |
-| `xdtc.lua` | 选择数据入口、模板输出任务和 action 的脚本及输入对象 |
+| `xdtc.lua` | 选择数据入口、模板输出任务和 action 的脚本或内联 entry 及输入对象 |
 | `board.lua` | 工程配置数据；可 include 包内默认描述后覆盖差异 |
 | `templates/*.tpl` | 把数据转换为 C、头文件或其他文本 |
 | 操作脚本 | 定义 `main(data, api, ...)`，使用传入对象执行操作 |
@@ -24,7 +24,7 @@ xdtc 是运行在 **Xmake 内置 Lua** 上的数据树和代码生成工具。�
 
 ```lua
 add_repositories("kunyi git@github.com:wmem/xmake-addons.git")
-add_addons("xdtc 0.3.0")
+add_addons("xdtc 0.4.0")
 
 target("generated")
     set_kind("phony")
@@ -82,13 +82,29 @@ Addon 的命令和代码生成规则不需要复制源码或 `includes()`。规�
 | `xmake xdtc gen` | 按 `tpl` 生成文件 |
 | `xmake xdtc data` | 展开完整数据，输出可加载的 Lua 文本 |
 | `xmake xdtc run scripts/check.lua arg` | 把完整数据交给脚本的 `main(root, api, ...)` |
-| `xmake xdtc inspect arg` | 从 `actions.inspect` 选择脚本和输入对象后执行 |
+| `xmake xdtc inspect arg` | 从 `actions.inspect` 选择输入，执行 script 或 entry |
 
 `gen/data/run` 是保留命令；其他名称由工程声明。没有子命令会报错，不隐式生成。选项放在子命令前，例如 `xmake xdtc --config=configs/xdtc.lua gen`。
 
-`data/run/action` 不增加模板 metadata，不写生成文件；脚本自己产生的副作用由脚本负责。action 用 `{script, select}` 声明，select 支持 root、子对象和函数组装。脚本只需维护输入字段约定，数据树改组时修改选择即可。完整用法和错误约定见 [命令、动作与路径基准](docs/USAGE.md#命令动作与路径基准)。
+`data/run/action` 不增加模板 metadata，不写生成文件；执行入口自己产生的副作用由入口负责。action 使用 `{script, select}` 或 `{entry, select}`，两种入口必须且只能提供一个，select 必填，支持 root、子对象和函数组装。执行入口只需维护输入字段约定，数据树改组时修改选择即可。完整用法和错误约定见 [命令、动作与路径基准](docs/USAGE.md#命令动作与路径基准)。
 
-run 和 action 均调用 `main(data, api, ...)`：第一个参数为数据，第二个为本次执行的能力对象，其余为命令行位置参数。脚本自行决定是否调用 `api.template.render/render_file`；xdtc 不注入全局 api，也不自动渲染。已有接收位置参数的脚本需要将它们移到第三个参数开始，详见 [脚本 API](docs/USAGE.md#脚本-api)。
+外部脚本调用 `main(data, api, ...)`，内联入口调用 `entry(data, api, ...)`：第一个参数为数据，第二个为本次执行的能力对象，其余为命令行位置参数。执行入口自行决定是否调用 `api.template.render/render_file`；xdtc 不注入全局 api，也不自动渲染。已有接收位置参数的脚本需要将它们移到第三个参数开始，详见 [脚本 API](docs/USAGE.md#脚本-api)。
+
+内联入口适合直接调用 Addon 模块，工程无需增加转发脚本。例如下面的片段要求工程已声明 `x-pyocd`，且数据中的 `tools.download` 提供该插件的完整 config：
+
+```lua
+actions = {
+    flash = {
+        select = "tools.download",
+        entry = function(config, api, ...)
+            local pyocd = import("@addon.x-pyocd.api", {anonymous = true})
+            return pyocd.flash(config)
+        end,
+    },
+}
+```
+
+`xmake xdtc flash` 才执行入口；`select_action/read_action_config` 只读取配置，不执行 `script` 或 `entry`。
 
 ## 给构建规则提供配置
 
@@ -143,7 +159,7 @@ CLI 默认从启动目录找 `xdtc.lua`，显式 `-P` 时从所选工程目录�
 
 ## 开发与验证
 
-工具源码版本以 [modules/xdtc.lua](modules/xdtc.lua) 的 `VERSION` 为准。发布代码版本时同步本页标题和 USAGE 的版本示例，在已验证提交上创建对应 Git 标签，如 `v0.9.0`。Addon 配方版本由 [插件索引仓库](https://github.com/wmem/xmake-addons/blob/master/README.md)独立维护，固定工具源码提交；更新文档不需要改变运行时版本。
+工具源码版本以 [modules/xdtc.lua](modules/xdtc.lua) 的 `VERSION` 为准。发布代码版本时同步本页标题和 USAGE 的版本示例，在已验证提交上创建对应 Git 标签，如 `v0.10.0`。Addon 配方版本由 [插件索引仓库](https://github.com/wmem/xmake-addons/blob/master/README.md)独立维护，固定工具源码提交；更新文档不需要改变运行时版本。
 
 在工具仓库根目录执行 `xmake lua tests/all.lua`。回归覆盖数据、模板、生成、DTC 行为、任务配置、源码集成、命令和配置对象读取；套件入口与验证说明见 [开发文档](docs/DEVELOPMENT.md#开发与测试)。Addon 的真实安装与消费验证位于 [索引集成测试](https://github.com/wmem/xmake-addons/blob/master/tests/test_addons.py)，v0.9.0／Addon 0.3.0 的结果见 [脚本 API 验证](https://github.com/wmem/xmake-addons/blob/master/tests/validation-xdtc-script-api.json)。
 

@@ -289,6 +289,41 @@ testcase("同一进程快速改写数据及脚本读取新内容", function()
     io.writefile(script, "function main(config) return 2 end")
     check(xdtc.execute(script, {}) == 2, "读取了旧脚本缓存")
 end)
+testcase("entry 选择输入、透传多参数和多返回值，不生成模板", function()
+    write_config([[actions={inline={select="serial",entry=function(data,api,a,b)
+        assert(data.port=="/dev/fixture" and data.node==nil)
+        assert(type(api.template.render)=="function")
+        return a,b,api.template.render("{{port}}",data,{escape=false})
+    end}}]])
+    local a,b,value=command.run(configfile,"inline",{"first","second"})
+    check(a=="first" and b=="second" and value=="/dev/fixture","entry参数/返回值错误")
+end)
+testcase("entry 相对模板基准、API隔离及配置读取不执行入口", function()
+    io.writefile(path.join(directory,"inline.tpl"),"{{port}}")
+    write_config([[actions={inline={select="serial",entry=function(data,api)
+        assert(api.template.extra==nil)
+        api.template.extra=true
+        return api.template.render_file("inline.tpl",data,{escape=false})
+    end}}]])
+    local selected,base=xdtc.read_action_config(configfile,"inline")
+    check(selected.port=="/dev/fixture" and base==path.join(directory,"data"),"读取错误")
+    check(command.run(configfile,"inline",{})=="/dev/fixture","entry模板路径错误")
+    check(command.run(configfile,"inline",{})=="/dev/fixture","API未隔离")
+    write_config([[actions={inline={select="serial",entry=function() raise("entry executed") end}}]])
+    check(xdtc.read_action_config(configfile,"inline").port=="/dev/fixture","读取执行了entry")
+    expect_error(function() command.run(configfile,"inline",{}) end,"entry executed")
+end)
+testcase("entry和script互斥，非法entry及缺少select拒绝执行", function()
+    for _,item in ipairs({
+        {"script=\"unused.lua\",entry=function() end,select=\"serial\"","both script and entry"},
+        {"entry=\"unused.lua\",select=\"serial\"","entry must be a function"},
+        {"entry=false,select=\"serial\"","entry must be a function"},
+        {"entry=function() end","requires select"},
+    }) do
+        write_config("actions={inline={"..item[1].."}}")
+        expect_error(function() command.run(configfile,"inline",{}) end,item[2])
+    end
+end)
 os.rm(root)
 print("xdtc.command tests: %d passed, %d failed", passed, failed)
 if failed > 0 then

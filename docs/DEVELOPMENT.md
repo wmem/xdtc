@@ -566,6 +566,7 @@ xdtc.read_config
 xdtc.read_action_config
 xdtc.select_action
 xdtc.execute
+xdtc.execute_entry
 xdtc.run_file
 xdtc.load
 xdtc.build
@@ -742,20 +743,22 @@ third_party/lua-resty-template-LICENSE
 
 ## action 输入选择
 
-`modules/xdtc/action.lua` 校验 action 声明；`selection.lua` 负责点分路径、函数组装和副本隔离，供 action 和 read_config 共用。command.lua 在执行 action 前调用公共 select_action，应用读取器可复用同一接口。
+`modules/xdtc/action.lua` 校验 action 声明：`select` 必填，`script` 和 `entry` 必须且只能提供一个；script 是非空路径，entry 是函数。`selection.lua` 负责点分路径、函数组装和副本隔离，供 action 和 read_config 共用。command.lua 在执行 action 前调用公共 select_action，再按声明选择 execute 或 execute_entry，应用读取器可复用同一选择接口。
 选择只作用于动作输入，gen/data 和 run 的数据语义保持不变。
 测试入口为 tests/command_run.lua，覆盖树改组后脚本保持不变、空对象、异常和修改隔离。
 
 
 ## 配置引用的调用边界
 
-addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。select_action(name) 的回调调用 read_action_config，在相同加载流程之后复用 actions[name].select，不执行 action 脚本；因此工程不需要另外提供包装读取模块。
+addon/includes/config/xmake.lua 创建配置引用和零参数读取函数；它不读取文件。使用方在脚本域绑定并调用回调后，公共 read_config 执行 load_config → load_data → selection.select，并返回所选 table 和实际数据入口目录。每次调用重新读取，不保存展开树缓存；使用方可以按自己的规则生命周期保存结果。select_action(name) 的回调调用 read_action_config，在相同加载流程之后复用 actions[name].select，不执行 action 的 script 或 entry；因此工程不需要另外提供包装读取模块。任务配置文件本身仍会正常加载，选择函数也会在读取时调用；“不执行 entry”不等于禁止配置和选择过程产生副作用。
 
 board:select 的组装函数接收独立 root，返回 table；board:select 自身返回读取函数。这两个函数的职责和返回类型不同。read_config／read_action_config／select_action 立即返回 table，也不等价于配置引用。错误路径、标量或 nil 结果必须失败，不自动回退 root。对应测试为 tests/selection_run.lua；辅助接口的实际消费由索引集成测试覆盖。
 
 
 ## 脚本能力与参数边界
 
-execute 在解析和加载脚本后，通过 [script_api.lua](../modules/xdtc/script_api.lua) 创建独立 api，调用 `main(data, api, ...)`。command 的 run 与 action 共用此入口；api 与数据、命令参数分别传入，没有全局环境注入，也不根据脚本签名兼容旧参数布局。位置参数从第三个参数开始。
+execute 在解析和加载脚本后，通过 [script_api.lua](../modules/xdtc/script_api.lua) 创建独立 api，调用 `main(data, api, ...)`。command 的 run 与 script action 共用此入口；entry action 调用公共 execute_entry，同样创建独立 api，再调用 `entry(data, api, ...)`，不加载外部脚本模块。api 与数据、命令参数分别传入，没有全局环境注入，也不根据脚本签名兼容旧参数布局。位置参数从第三个参数开始，返回值及异常沿调用链传播。
 
-api.template 的 render/render_file 复用现有模板模块；render_file 将相对路径绑定到当前脚本目录。API 对象每次执行新建，使用方修改不会影响下一次执行；模板内容缓存由模板引擎按既有规则管理，不引入第二套渲染器。脚本自己决定是否渲染和写文件。源码回归入口为 [script_api_run.lua](../tests/script_api_run.lua)，真实 Addon 消费由索引测试验证。
+api.template 的 render/render_file 复用现有模板模块；外部脚本的 render_file 将相对路径绑定到当前脚本目录，内联 action 则绑定到任务配置的 base_dir。直接调用 execute_entry 时使用 opt.base_dir，未提供则为当前工作目录。API 对象每次执行新建，使用方修改不会影响下一次执行；模板内容缓存由模板引擎按既有规则管理，不引入第二套渲染器。执行入口自己决定是否渲染和写文件。源码回归入口为 [script_api_run.lua](../tests/script_api_run.lua)，真实 Addon 消费由索引测试验证。
+
+entry 的回归应覆盖与 script 的互斥校验、显式 select、参数顺序和返回值、异常传播、相对资源路径、每次独立 API，以及 read_action_config/select_action 不调用 entry。工具源码 v0.10.0 对应新 Addon 配方 0.4.0，当前本地开发与验证不代表远程版本已发布；上文 v0.9.0 的执行记录只说明该历史版本。
